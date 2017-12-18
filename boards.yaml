@@ -14,14 +14,14 @@
   placement:
     -
       - add rectangle (0, 0) 4 4
-      - delete square (0, 0)
-      - delete square (0, 1)
-      - delete square (3, 0)
+      - remove square (0, 0)
+      - remove square (0, 1)
+      - remove square (3, 0)
     -
-      - add rectangle (4, 0) 4 4
-      - delete square (0, 7)
-      - delete square (3, 6)
-      - delete square (3, 7)
+      - add rectangle (0, 4) 4 4
+      - remove square (0, 7)
+      - remove square (3, 6)
+      - remove square (3, 7)
 
 - name: traditional_noholes
   topology:
@@ -34,5 +34,5 @@
     -
       - add rectangle (0, 0) 4 4
     -
-      - add rectangle (4, 0) 4 4
+      - add rectangle (0, 4) 4 4
 
