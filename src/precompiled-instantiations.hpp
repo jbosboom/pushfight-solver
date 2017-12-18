@@ -4,30 +4,30 @@
 
 //Various string and/or iostream instantiations are already handled by libstdc++.
 
-AUTOMATA_EXTERN_TEMPLATE template class std::vector<unsigned int>;
-AUTOMATA_EXTERN_TEMPLATE template class std::vector<std::string>;
-AUTOMATA_EXTERN_TEMPLATE template class std::vector<std::pair<std::size_t, std::size_t>>;
-AUTOMATA_EXTERN_TEMPLATE template class std::vector<bool>;
-AUTOMATA_EXTERN_TEMPLATE template class std::vector<std::vector<bool>>;
-AUTOMATA_EXTERN_TEMPLATE template class std::vector<std::uint8_t>;
-AUTOMATA_EXTERN_TEMPLATE template class std::vector<std::pair<unsigned int, unsigned int>>;
+//AUTOMATA_EXTERN_TEMPLATE template class std::vector<unsigned int>;
+//AUTOMATA_EXTERN_TEMPLATE template class std::vector<std::string>;
+//AUTOMATA_EXTERN_TEMPLATE template class std::vector<std::pair<std::size_t, std::size_t>>;
+//AUTOMATA_EXTERN_TEMPLATE template class std::vector<bool>;
+//AUTOMATA_EXTERN_TEMPLATE template class std::vector<std::vector<bool>>;
+//AUTOMATA_EXTERN_TEMPLATE template class std::vector<std::uint8_t>;
+//AUTOMATA_EXTERN_TEMPLATE template class std::vector<std::pair<unsigned int, unsigned int>>;
 
-AUTOMATA_EXTERN_TEMPLATE template class std::unordered_set<unsigned int>;
-AUTOMATA_EXTERN_TEMPLATE template class std::unordered_set<std::size_t>;
+//AUTOMATA_EXTERN_TEMPLATE template class std::unordered_set<unsigned int>;
+//AUTOMATA_EXTERN_TEMPLATE template class std::unordered_set<std::size_t>;
 
 //AUTOMATA_EXTERN_TEMPLATE template class std::unordered_map<linear_set<unsigned int>, unsigned int>;
-AUTOMATA_EXTERN_TEMPLATE template class std::unordered_map<std::pair<unsigned int, unsigned int>, unsigned int, boost::hash<std::pair<unsigned int, unsigned int>>>;
+//AUTOMATA_EXTERN_TEMPLATE template class std::unordered_map<std::pair<unsigned int, unsigned int>, unsigned int, boost::hash<std::pair<unsigned int, unsigned int>>>;
 
-AUTOMATA_EXTERN_TEMPLATE template class std::tuple<unsigned int, unsigned int, bool>;
+//AUTOMATA_EXTERN_TEMPLATE template class std::tuple<unsigned int, unsigned int, bool>;
 
-AUTOMATA_EXTERN_TEMPLATE template class boost::dynamic_bitset<std::size_t>;
+//AUTOMATA_EXTERN_TEMPLATE template class boost::dynamic_bitset<std::size_t>;
 
-AUTOMATA_EXTERN_TEMPLATE template class google::dense_hash_map<std::pair<unsigned int, unsigned int>, unsigned int, boost::hash<std::pair<unsigned int, unsigned int>>>;
-AUTOMATA_EXTERN_TEMPLATE template class google::dense_hash_map<std::tuple<unsigned int, unsigned int, bool>, unsigned int, boost::hash<std::tuple<unsigned int, unsigned int, bool>>>;
+//AUTOMATA_EXTERN_TEMPLATE template class google::dense_hash_map<std::pair<unsigned int, unsigned int>, unsigned int, boost::hash<std::pair<unsigned int, unsigned int>>>;
+//AUTOMATA_EXTERN_TEMPLATE template class google::dense_hash_map<std::tuple<unsigned int, unsigned int, bool>, unsigned int, boost::hash<std::tuple<unsigned int, unsigned int, bool>>>;
 
-AUTOMATA_EXTERN_TEMPLATE template class google::dense_hash_set<unsigned int>;
+//AUTOMATA_EXTERN_TEMPLATE template class google::dense_hash_set<unsigned int>;
 
-AUTOMATA_EXTERN_TEMPLATE template class google::sparse_hash_map<std::pair<unsigned int, unsigned int>, unsigned int, boost::hash<std::pair<unsigned int, unsigned int>>>;
+//AUTOMATA_EXTERN_TEMPLATE template class google::sparse_hash_map<std::pair<unsigned int, unsigned int>, unsigned int, boost::hash<std::pair<unsigned int, unsigned int>>>;
 
 /*
 //can't use the alias template in an explicit instantiation
