@@ -19,6 +19,29 @@ public:
 			pawns_(pawns), topology_(topology), placement_first_(placement_first),
 			placement_second_(placement_second), placement_first_len_(placement_first_len),
 			placement_second_len_(placement_second_len) {}
+
+	unsigned int pushers() const {return pushers_;}
+	unsigned int pawns() const {return pawns_;}
+	unsigned int squares() const {return squares_;}
+
+	unsigned int neighbor(unsigned int square, Dir dir) const {
+		return topology_[square*4 + static_cast<unsigned int>(dir)];
+	}
+	std::array<unsigned int, 4> neighbors(unsigned int square) const {
+		return {
+			neighbor(square, LEFT),
+			neighbor(square, UP),
+			neighbor(square, RIGHT),
+			neighbor(square, DOWN)
+		};
+	}
+	std::uint32_t neighbors_mask(unsigned int square) const {
+		std::uint32_t m = 0;
+		for (unsigned int n : neighbors(square))
+			if (n != VOID && n != RAIL)
+				m |= (1 << n);
+		return m;
+	}
 private:
 	std::string_view name_;
 	unsigned int squares_, anchorables_, pushers_, pawns_;
