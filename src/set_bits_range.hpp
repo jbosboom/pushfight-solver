@@ -8,6 +8,7 @@
 #ifndef SET_BITS_RANGE_H
 #define SET_BITS_RANGE_H
 
+#include <limits>
 #include <bit>
 
 struct set_bits_range_sentinel {};
@@ -27,11 +28,8 @@ struct set_bits_range_iterator {
 	unsigned int operator*() const {
 		return idx;
 	}
-	bool operator==(set_bits_range_sentinel) const {
-		return !x;
-	}
 	bool operator!=(set_bits_range_sentinel) const {
-		return x;
+		return idx == std::numeric_limits<Integer>::digits;
 	}
 };
 
