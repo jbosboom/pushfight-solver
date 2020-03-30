@@ -19,9 +19,20 @@ struct SharedWorkspace {
 		neighbor_masks.reserve(b.squares());
 		for (unsigned int s = 0; s < b.squares(); ++s)
 			neighbor_masks.push_back(b.neighbors_mask(s));
+
+		for (unsigned int i = 0; i < board.squares(); ++i) {
+			board_choose_masks[1].push_back(1 << i);
+			for (unsigned int j = i+1; j < board.squares(); ++j) {
+				board_choose_masks[2].push_back((1 << i) | (1 << j));
+				for (unsigned int k = j+1; k < board.squares(); ++k)
+					board_choose_masks[3].push_back((1 << i) | (1 << j) | (1 << k));
+			}
+		}
 	}
 	const Board& board;
 	std::vector<uint32_t> neighbor_masks;
+	//board_choose_masks[i] is (squares choose i) masks for the position generator
+	std::array<std::vector<uint32_t>, 4> board_choose_masks;
 
 	//TODO these should be in a Game object for non-Board rules customization
 	unsigned int max_moves = 2;
@@ -158,6 +169,52 @@ void next_states(const State source, unsigned int move_number, const SharedWorks
 	}
 	//if (move_number == 0)
 	//	visitor.end(source);
+}
+
+
+
+void enumerate_anchored_states(const Board& board) {
+	SharedWorkspace swork(board);
+	unsigned long count = 0;
+	for (unsigned int p = 0; p < swork.board.anchorable_squares(); ++p) {
+//	for (unsigned int p = 0; p < 1; ++p) {
+		State state = {};
+		state.enemy_pushers = 1 << p;
+		state.anchored_pieces = state.enemy_pushers;
+
+		for (unsigned int epu_mask : swork.board_choose_masks[swork.board.pushers() - 1]) {
+			if (epu_mask & state.blockers()) continue;
+			state.enemy_pushers |= epu_mask;
+			assert(std::popcount(state.enemy_pushers) == swork.board.pushers());
+
+			for (unsigned int epa_mask : swork.board_choose_masks[swork.board.pawns()]) {
+				if (epa_mask & state.blockers()) continue;
+				state.enemy_pawns = epa_mask;
+
+				for (unsigned int apu_mask : swork.board_choose_masks[swork.board.pushers()]) {
+					if (apu_mask & state.blockers()) continue;
+					state.allied_pushers = apu_mask;
+
+					for (unsigned int apa_mask : swork.board_choose_masks[swork.board.pawns()]) {
+						if (apa_mask & state.blockers()) continue;
+						state.allied_pawns = apa_mask;
+						++count;
+						state.allied_pawns = 0;
+					}
+
+					state.allied_pushers = 0;
+				}
+
+				state.enemy_pawns = 0;
+			}
+
+			state.enemy_pushers &= ~epu_mask;
+		}
+
+		state.enemy_pushers = 0;
+		state.anchored_pieces = 0;
+	}
+	fmt::print("{}\n", count);
 }
 
 } //namespace pushfight

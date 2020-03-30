@@ -23,6 +23,7 @@ public:
 	unsigned int pushers() const {return pushers_;}
 	unsigned int pawns() const {return pawns_;}
 	unsigned int squares() const {return squares_;}
+	unsigned int anchorable_squares() const {return anchorables_;}
 
 	unsigned int neighbor(unsigned int square, Dir dir) const {
 		return topology_[square*4 + static_cast<unsigned int>(dir)];
