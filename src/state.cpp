@@ -1,18 +1,11 @@
 #include "precompiled.hpp"
+#include "state.hpp"
 #include "board.hpp"
 #include "set_bits_range.hpp"
 
 using std::uint32_t;
 
 namespace pushfight {
-
-struct State {
-	uint32_t enemy_pushers, enemy_pawns, allied_pushers, allied_pawns;
-	uint32_t anchored_pieces; //usually one enemy pusher, but allow for variants
-	uint32_t blockers() const {
-		return enemy_pushers | enemy_pawns | allied_pushers | allied_pawns;
-	}
-};
 
 struct SharedWorkspace {
 	SharedWorkspace(const Board& b) : board(b) {
@@ -79,7 +72,7 @@ void move_piece(State& state, unsigned int from, unsigned int to) {
 		throw std::logic_error("move_piece: piece not present in any mask?");
 }
 
-void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorkspace& twork) {
+void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorkspace& twork, StateVisitor& sv) {
 	for (unsigned int start : set_bits_range(source.allied_pushers)) {
 		for (Dir dir : {LEFT, UP, RIGHT, DOWN}) {
 			twork.chain.clear();
@@ -118,8 +111,10 @@ void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorks
 				move_piece(next, twork.chain[i], twork.chain[i+1]);
 			//TODO: if we have multiple anchored pieces, how do we update?
 			next.anchored_pieces = 1u << twork.chain[1]; //anchor where the pusher moved to
+			std::swap(next.allied_pushers, next.enemy_pushers);
+			std::swap(next.allied_pawns, next.enemy_pawns);
 
-			//visitor.visit(next, removed_piece);
+			sv.accept(next, removed_piece);
 		}
 	}
 }
@@ -139,12 +134,12 @@ uint32_t connected_empty_space(unsigned int source, uint32_t blockers, const Sha
 	return result;
 }
 
-void next_states(const State source, unsigned int move_number, const SharedWorkspace& swork, ThreadWorkspace& twork) {
-	//to allow detecting positions with no moves we need a begin/end pair on the acceptor.
-	//if (move_number == 0)
-	//	visitor.begin(source);
+void next_states(const State source, unsigned int move_number, const SharedWorkspace& swork, ThreadWorkspace& twork, StateVisitor& sv) {
+	if (move_number == 0)
+		sv.begin(source);
+
 	if (swork.allowable_moves_mask & (1 << move_number))
-		do_all_pushes(source, swork, twork);
+		do_all_pushes(source, swork, twork, sv);
 
 	if (move_number < swork.max_moves) {
 		//Make a move.
@@ -154,7 +149,7 @@ void next_states(const State source, unsigned int move_number, const SharedWorks
 				State next = source;
 				next.allied_pushers &= ~(1 << from);
 				next.allied_pushers |= (1 << to);
-				next_states(source, move_number+1, swork, twork);
+				next_states(source, move_number+1, swork, twork, sv);
 			}
 		}
 		for (unsigned int from : set_bits_range(source.allied_pawns)) {
@@ -163,21 +158,23 @@ void next_states(const State source, unsigned int move_number, const SharedWorks
 				State next = source;
 				next.allied_pawns &= ~(1 << from);
 				next.allied_pawns |= (1 << to);
-				next_states(source, move_number+1, swork, twork);
+				next_states(source, move_number+1, swork, twork, sv);
 			}
 		}
 	}
-	//if (move_number == 0)
-	//	visitor.end(source);
+
+	if (move_number == 0)
+		sv.end(source);
 }
 
 
 
-void enumerate_anchored_states(const Board& board) {
+void enumerate_anchored_states(const Board& board, StateVisitor& sv) {
 	SharedWorkspace swork(board);
+	ThreadWorkspace twork;
 	unsigned long count = 0;
-	for (unsigned int p = 0; p < swork.board.anchorable_squares(); ++p) {
-//	for (unsigned int p = 0; p < 1; ++p) {
+//	for (unsigned int p = 0; p < swork.board.anchorable_squares(); ++p) {
+	for (unsigned int p = 0; p < 1; ++p) {
 		State state = {};
 		state.enemy_pushers = 1 << p;
 		state.anchored_pieces = state.enemy_pushers;
@@ -186,6 +183,7 @@ void enumerate_anchored_states(const Board& board) {
 			if (epu_mask & state.blockers()) continue;
 			state.enemy_pushers |= epu_mask;
 			assert(std::popcount(state.enemy_pushers) == swork.board.pushers());
+			fmt::print("{}\n", epu_mask);
 
 			for (unsigned int epa_mask : swork.board_choose_masks[swork.board.pawns()]) {
 				if (epa_mask & state.blockers()) continue;
@@ -199,6 +197,7 @@ void enumerate_anchored_states(const Board& board) {
 						if (apa_mask & state.blockers()) continue;
 						state.allied_pawns = apa_mask;
 						++count;
+						next_states(state, 0, swork, twork, sv);
 						state.allied_pawns = 0;
 					}
 
