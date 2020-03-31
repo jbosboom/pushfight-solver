@@ -122,15 +122,19 @@ void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorks
 }
 
 uint32_t connected_empty_space(unsigned int source, uint32_t blockers, const SharedWorkspace& work) {
-	uint32_t result = work.neighbor_masks[source] & blockers;
+	uint32_t result = (work.neighbor_masks[source] & blockers) | (1 << source);
 	uint32_t expanded = 1 << source;
+//	fmt::print("{:b} {:b}\n", result, expanded);
 
-	while (expanded != result)
-		for (unsigned int bit : set_bits_range(result & ~expanded)) {
+	while (expanded != result) {
+		uint32_t old_result = result, unexpanded = result & ~expanded;
+		for (unsigned int bit : set_bits_range(unexpanded)) {
+			assert(bit < work.board.squares());
 			result |= work.neighbor_masks[bit] & blockers;
-			expanded |= 1 << bit;
+//			fmt::print("{} {:b} {:b}\n", bit, result, expanded);
 		}
-
+		expanded = old_result;
+	}
 	//avoid no-op move to where we started from
 	result &= ~(1 << source);
 	return result;
