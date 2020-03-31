@@ -74,6 +74,8 @@ void move_piece(State& state, unsigned int from, unsigned int to) {
 
 void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorkspace& twork, StateVisitor& sv) {
 	for (unsigned int start : set_bits_range(source.allied_pushers)) {
+		if (!(swork.neighbor_masks[start] & (source.blockers() & ~source.anchored_pieces)))
+			continue; //no non-anchored pieces to push, in any direction
 		for (Dir dir : {LEFT, UP, RIGHT, DOWN}) {
 			twork.chain.clear();
 			twork.chain.push_back(start);
