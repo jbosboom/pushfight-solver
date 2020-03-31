@@ -33,7 +33,6 @@ struct SharedWorkspace {
 };
 
 struct ThreadWorkspace {
-	std::vector<unsigned int> chain;
 };
 
 char remove_piece(State& state, unsigned int index) {
@@ -73,41 +72,43 @@ void move_piece(State& state, unsigned int from, unsigned int to) {
 }
 
 void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorkspace& twork, StateVisitor& sv) {
+	std::array<unsigned int, 10> chain;
+	unsigned int chain_length = 0;
 	for (unsigned int start : set_bits_range(source.allied_pushers)) {
 		if (!(swork.neighbor_masks[start] & (source.blockers() & ~source.anchored_pieces)))
 			continue; //no non-anchored pieces to push, in any direction
 		for (Dir dir : {LEFT, UP, RIGHT, DOWN}) {
-			twork.chain.clear();
-			twork.chain.push_back(start);
+			chain_length = 0;
+			chain[chain_length++] = start;
 			bool want_remove = false;
 
 			while (true) {
-				unsigned int next = swork.board.neighbor(twork.chain.back(), dir);
+				unsigned int next = swork.board.neighbor(chain[chain_length-1], dir);
 				if (next == RAIL || source.anchored_pieces & (1 << next)) {
 					//TODO: if we have a torus, do we allow a circular push?
-					twork.chain.clear();
+					chain_length = 0;
 					break; //push not possible
 				} else if (next == VOID) {
 					want_remove = true;
 					break;
 				} else if (source.blockers() & (1 << next))
-					twork.chain.push_back(next);
+					chain[chain_length++] = next;
 				else
 					break;
 			}
-			if (twork.chain.size() < 2)
+			if (chain_length < 2)
 				continue;
 
 			State next = source;
 			char removed_piece = ' ';
 			if (want_remove)
-				removed_piece = remove_piece(next, twork.chain.back());
+				removed_piece = remove_piece(next, chain[chain_length-1]);
 
-			assert(twork.chain.size() >= 2);
-			for (auto i = twork.chain.size()-1; i-- > 0;)
-				move_piece(next, twork.chain[i], twork.chain[i+1]);
+			assert(chain_length >= 2);
+			for (auto i = chain_length-1; i-- > 0;)
+				move_piece(next, chain[i], chain[i+1]);
 			//TODO: if we have multiple anchored pieces, how do we update?
-			next.anchored_pieces = 1u << twork.chain[1]; //anchor where the pusher moved to
+			next.anchored_pieces = 1u << chain[1]; //anchor where the pusher moved to
 			std::swap(next.allied_pushers, next.enemy_pushers);
 			std::swap(next.allied_pawns, next.enemy_pawns);
 
