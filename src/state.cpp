@@ -79,6 +79,7 @@ void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorks
 		for (Dir dir : {LEFT, UP, RIGHT, DOWN}) {
 			twork.chain.clear();
 			twork.chain.push_back(start);
+			bool want_remove = false;
 
 			while (true) {
 				unsigned int next = swork.board.neighbor(twork.chain.back(), dir);
@@ -86,12 +87,10 @@ void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorks
 					//TODO: if we have a torus, do we allow a circular push?
 					twork.chain.clear();
 					break; //push not possible
-				}
-				if (next == VOID) {
-					twork.chain.push_back(next);
+				} else if (next == VOID) {
+					want_remove = true;
 					break;
-				}
-				if (source.blockers() & (1 << next))
+				} else if (source.blockers() & (1 << next))
 					twork.chain.push_back(next);
 				else
 					break;
@@ -101,12 +100,8 @@ void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorks
 
 			State next = source;
 			char removed_piece = ' ';
-			if (twork.chain.back() == VOID) {
-				if (twork.chain.size() == 2)
-					continue; //can't push nothing into the void
-				twork.chain.pop_back(); //pops void, leaves removed piece at back()
+			if (want_remove)
 				removed_piece = remove_piece(next, twork.chain.back());
-			}
 
 			assert(twork.chain.size() >= 2);
 			for (auto i = twork.chain.size()-1; i-- > 0;)
