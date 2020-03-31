@@ -29,7 +29,7 @@ struct set_bits_range_iterator {
 		return idx;
 	}
 	bool operator!=(set_bits_range_sentinel) const {
-		return idx == std::numeric_limits<Integer>::digits;
+		return idx != std::numeric_limits<Integer>::digits;
 	}
 };
 
