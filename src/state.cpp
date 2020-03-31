@@ -54,22 +54,22 @@ char remove_piece(State& state, unsigned int index) {
 
 }
 
+template<typename Integer>
+bool move_bit(Integer& x, unsigned int from, unsigned int to) {
+	auto bit = (x & (1u << from)) >> from;
+	x &= (1u << from);
+	x |= (bit << to);
+	return bit;
+}
+
 void move_piece(State& state, unsigned int from, unsigned int to) {
-	//TODO make this branchless by extracting one bit, clearing it, and storing it back
-	if (state.allied_pushers & (1 << from)) {
-		state.allied_pushers &= ~(1 << from);
-		state.allied_pushers |= (1 << to);
-	} else if (state.allied_pawns & (1 << from)) {
-		state.allied_pawns &= ~(1 << from);
-		state.allied_pawns |= (1 << to);
-	} else if (state.enemy_pushers & (1 << from)) {
-		state.enemy_pushers &= ~(1 << from);
-		state.enemy_pushers |= (1 << to);
-	} else if (state.enemy_pawns & (1 << from)) {
-		state.enemy_pawns &= ~(1 << from);
-		state.enemy_pawns |= (1 << to);
-	} else
-		throw std::logic_error("move_piece: piece not present in any mask?");
+	//We don't know which mask it's in, but it's only in one, so it's safe to do
+	//the move in all masks.  They are parallel dependency chains so this isn't
+	//4x as expensive as knowing.
+	move_bit(state.allied_pushers, from, to);
+	move_bit(state.allied_pawns, from, to);
+	move_bit(state.enemy_pushers, from, to);
+	move_bit(state.enemy_pawns, from, to);
 }
 
 void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorkspace& twork, StateVisitor& sv) {
