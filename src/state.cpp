@@ -84,12 +84,15 @@ void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorks
 
 			while (true) {
 				unsigned int next = swork.board.neighbor(chain[chain_length-1], dir);
-				if (next == RAIL || source.anchored_pieces & (1 << next)) {
+				if (next == RAIL) {
 					//TODO: if we have a torus, do we allow a circular push?
 					chain_length = 0;
 					break; //push not possible
 				} else if (next == VOID) {
 					want_remove = true;
+					break;
+				} else if (source.anchored_pieces & (1 << next)) {
+					chain_length = 0;
 					break;
 				} else if (source.blockers() & (1 << next))
 					chain[chain_length++] = next;
