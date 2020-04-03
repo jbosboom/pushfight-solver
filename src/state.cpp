@@ -38,6 +38,8 @@ struct ThreadWorkspace {
 };
 
 char remove_piece(State& state, unsigned int index) {
+	//Surprisingly, this is faster than a branchless solution that composes the
+	//bits to form an index into an array of char.
 	if (state.allied_pushers & (1 << index)) {
 		state.allied_pushers &= ~(1 << index);
 		return 'A';
@@ -52,7 +54,6 @@ char remove_piece(State& state, unsigned int index) {
 		return 'e';
 	} else
 		throw std::logic_error("remove_piece: piece not present in any mask?");
-
 }
 
 template<typename Integer>
