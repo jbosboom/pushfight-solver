@@ -82,7 +82,8 @@ void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorks
 		for (Dir dir : {LEFT, UP, RIGHT, DOWN}) {
 			chain_length = 0;
 			chain[chain_length++] = start;
-			bool want_remove = false;
+			State succ = source;
+			char removed_piece = ' ';
 
 			while (true) {
 				unsigned int next = swork.board.neighbor(chain[chain_length-1], dir);
@@ -91,7 +92,7 @@ void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorks
 					chain_length = 0;
 					break; //push not possible
 				} else if (next == VOID) {
-					want_remove = true;
+					removed_piece = remove_piece(succ, chain[chain_length-1]);
 					break;
 				} else if (source.anchored_pieces & (1 << next)) {
 					chain_length = 0;
@@ -104,20 +105,14 @@ void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorks
 			if (chain_length < 2)
 				continue;
 
-			State next = source;
-			char removed_piece = ' ';
-			if (want_remove)
-				removed_piece = remove_piece(next, chain[chain_length-1]);
-
-			assert(chain_length >= 2);
 			for (auto i = chain_length-1; i-- > 0;)
-				move_piece(next, chain[i], chain[i+1]);
+				move_piece(succ, chain[i], chain[i+1]);
 			//TODO: if we have multiple anchored pieces, how do we update?
-			next.anchored_pieces = 1u << chain[1]; //anchor where the pusher moved to
-			std::swap(next.allied_pushers, next.enemy_pushers);
-			std::swap(next.allied_pawns, next.enemy_pawns);
+			succ.anchored_pieces = 1u << chain[1]; //anchor where the pusher moved to
+			std::swap(succ.allied_pushers, succ.enemy_pushers);
+			std::swap(succ.allied_pawns, succ.enemy_pawns);
 
-			sv.accept(next, removed_piece);
+			sv.accept(succ, removed_piece);
 		}
 	}
 }
