@@ -21,6 +21,8 @@ struct SharedWorkspace {
 					board_choose_masks[3].push_back((1 << i) | (1 << j) | (1 << k));
 			}
 		}
+		for (auto& v : board_choose_masks)
+			std::sort(v.begin(), v.end());
 	}
 	const Board& board;
 	std::vector<uint32_t> neighbor_masks;
