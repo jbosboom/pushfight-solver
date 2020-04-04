@@ -67,7 +67,7 @@ unsigned long rank(State state, const Board& board) {
 	--squares;
 
 	auto enemy_pushers = state.enemy_pushers & ~state.anchored_pieces;
-	enemy_pushers = pext0(enemy_pushers, pext_mask);
+	enemy_pushers = pext2(enemy_pushers, pext_mask);
 	pext_mask &= ~state.enemy_pushers;
 	//We want to multiply by squares before adding in the next "digit" of the
 	//result, but the very first multiply is special (by anchorable_squares()).
@@ -86,7 +86,7 @@ unsigned long rank(State state, const Board& board) {
 		enemy_pushers >>= low_bit + 1;
 	}
 
-	auto enemy_pawns = pext0(state.enemy_pawns, pext_mask);
+	auto enemy_pawns = pext2(state.enemy_pawns, pext_mask);
 	pext_mask &= ~state.enemy_pawns;
 	while (enemy_pawns) {
 		int low_bit = std::countr_zero(enemy_pawns);
@@ -96,7 +96,7 @@ unsigned long rank(State state, const Board& board) {
 		enemy_pawns >>= low_bit + 1;
 	}
 
-	auto allied_pushers = pext0(state.allied_pushers, pext_mask);
+	auto allied_pushers = pext2(state.allied_pushers, pext_mask);
 	pext_mask &= ~state.allied_pushers;
 	while (allied_pushers) {
 		int low_bit = std::countr_zero(allied_pushers);
@@ -106,7 +106,7 @@ unsigned long rank(State state, const Board& board) {
 		allied_pushers >>= low_bit + 1;
 	}
 
-	auto allied_pawns = pext0(state.allied_pawns, pext_mask);
+	auto allied_pawns = pext2(state.allied_pawns, pext_mask);
 	pext_mask &= ~state.allied_pawns;
 	while (allied_pawns) {
 		int low_bit = std::countr_zero(allied_pawns);
