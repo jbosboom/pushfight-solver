@@ -113,7 +113,8 @@ void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorks
 			std::swap(succ.allied_pushers, succ.enemy_pushers);
 			std::swap(succ.allied_pawns, succ.enemy_pawns);
 
-			sv.accept(succ, removed_piece);
+			if (!sv.accept(succ, removed_piece))
+				return;
 		}
 	}
 }

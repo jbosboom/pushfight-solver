@@ -13,11 +13,13 @@ struct InherentValueVisitor : public StateVisitor {
 		is_win = false;
 		is_loss = true;
 	}
-	void accept(const State& state, char removed_piece) override {
-		if (removed_piece == 'E' || removed_piece == 'e')
+	bool accept(const State& state, char removed_piece) override {
+		if (removed_piece == 'E' || removed_piece == 'e') {
 			is_win = true;
-		else if (removed_piece != 'A' && removed_piece != 'a')
+			return false;
+		} else if (removed_piece != 'A' && removed_piece != 'a')
 			is_loss = false;
+		return true;
 	}
 	void end(const State& state) override {
 		++visited;

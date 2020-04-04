@@ -8,7 +8,7 @@ using namespace pushfight;
 struct StateCounter : public StateVisitor {
 	unsigned long began = 0, accepted = 0, ended = 0;
 	void begin(const State& state) override {++began;}
-	void accept(const State& state, char removed_piece) override {++accepted;}
+	bool accept(const State& state, char removed_piece) override {++accepted; return true;}
 	void end(const State& state) override {++ended;}
 };
 

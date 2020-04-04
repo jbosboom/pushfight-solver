@@ -15,7 +15,8 @@ struct State {
 
 struct StateVisitor {
 	virtual void begin(const State& state) = 0;
-	virtual void accept(const State& state, char removed_piece) = 0;
+	//return false to stop visiting
+	virtual bool accept(const State& state, char removed_piece) = 0;
 	virtual void end(const State& state) = 0;
 };
 
