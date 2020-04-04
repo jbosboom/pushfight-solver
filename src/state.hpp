@@ -13,6 +13,8 @@ struct State {
 	}
 };
 
+unsigned long rank(State state, const Board& board);
+
 struct StateVisitor {
 	virtual void begin(const State& state) = 0;
 	//return false to stop visiting

@@ -7,6 +7,120 @@ using std::uint32_t;
 
 namespace pushfight {
 
+//adapted from http://www.talkchess.com/forum3/viewtopic.php?t=48220&start=2
+template<typename Integer>
+Integer pext0(Integer val, Integer mask) {
+	Integer res = 0;
+	for (unsigned int i = 0; mask; ++i) {
+		if (val & mask & -mask)
+			res |= static_cast<Integer>(1) << i;
+		mask &= mask - 1;
+	}
+	return res;
+}
+
+//adapted from http://www.talkchess.com/forum3/viewtopic.php?t=48220&start=1
+template<typename Integer>
+Integer pext1(Integer val, Integer mask) {
+	Integer res = 0;
+	int i = 0;
+
+	val &= mask;
+	while (val) {
+		Integer p = val & -val;
+		Integer q = mask & -mask;
+		while (q != p) {
+			i++;
+			mask &= mask - 1;
+			q = mask & -mask;
+		}
+		mask &= mask - 1;
+		res |= static_cast<Integer> (1) << i;
+		val &= val - 1;
+	}
+
+	return res;
+}
+
+//adapted from http://www.talkchess.com/forum3/viewtopic.php?t=48220&start=1#p723470
+template<typename Integer>
+Integer pext2(Integer val, Integer mask) {
+	Integer res = 0;
+	for (Integer src = val & mask; src; src &= src - 1) {
+		res |= 1 << std::popcount(((src & -src) - 1) & mask);
+	}
+	return res;
+}
+
+unsigned long rank(State state, const Board& board) {
+	unsigned long result = 0;
+	//The bits that haven't been used yet.
+	unsigned int pext_mask = (1 << board.squares()) - 1;
+	//The number of squares that haven't been used; should be popcount(pext_mask).
+	unsigned int squares = board.squares();
+
+	//This is assuming there is exactly one anchored piece, an enemy pusher.
+	int anchored_pusher_idx = std::countr_zero(state.anchored_pieces);
+	result += anchored_pusher_idx;
+	result *= board.anchorable_squares();
+	pext_mask &= ~state.anchored_pieces;
+	--squares;
+
+	auto enemy_pushers = state.enemy_pushers & ~state.anchored_pieces;
+	enemy_pushers = pext0(enemy_pushers, pext_mask);
+	pext_mask &= ~state.enemy_pushers;
+	//We want to multiply by squares before adding in the next "digit" of the
+	//result, but the very first multiply is special (by anchorable_squares()).
+	//So we unroll the first iteration of this loop to omit the multiply.
+	if (enemy_pushers) {
+		int epu_low_bit = std::countr_zero(enemy_pushers);
+		result += epu_low_bit;
+		--squares;
+		enemy_pushers >>= epu_low_bit + 1;
+	}
+	while (enemy_pushers) {
+		int low_bit = std::countr_zero(enemy_pushers);
+		result *= squares;
+		result += low_bit;
+		--squares;
+		enemy_pushers >>= low_bit + 1;
+	}
+
+	auto enemy_pawns = pext0(state.enemy_pawns, pext_mask);
+	pext_mask &= ~state.enemy_pawns;
+	while (enemy_pawns) {
+		int low_bit = std::countr_zero(enemy_pawns);
+		result *= squares;
+		result += low_bit;
+		--squares;
+		enemy_pawns >>= low_bit + 1;
+	}
+
+	auto allied_pushers = pext0(state.allied_pushers, pext_mask);
+	pext_mask &= ~state.allied_pushers;
+	while (allied_pushers) {
+		int low_bit = std::countr_zero(allied_pushers);
+		result *= squares;
+		result += low_bit;
+		--squares;
+		allied_pushers >>= low_bit + 1;
+	}
+
+	auto allied_pawns = pext0(state.allied_pawns, pext_mask);
+	pext_mask &= ~state.allied_pawns;
+	while (allied_pawns) {
+		int low_bit = std::countr_zero(allied_pawns);
+		result *= squares;
+		result += low_bit;
+		--squares;
+		allied_pawns >>= low_bit + 1;
+	}
+
+	return result;
+}
+
+
+
 struct SharedWorkspace {
 	SharedWorkspace(const Board& b) : board(b) {
 		neighbor_masks.reserve(b.squares());
@@ -21,8 +135,8 @@ struct SharedWorkspace {
 					board_choose_masks[3].push_back((1 << i) | (1 << j) | (1 << k));
 			}
 		}
-		for (auto& v : board_choose_masks)
-			std::sort(v.begin(), v.end());
+		//The masks are already in the proper order for enumerating the states
+		//in rank order, so don't sort them.
 	}
 	const Board& board;
 	std::vector<uint32_t> neighbor_masks;
