@@ -123,9 +123,9 @@ unsigned long rank(State state, const Board& board) {
 
 struct SharedWorkspace {
 	SharedWorkspace(const Board& b) : board(b) {
-		neighbor_masks.reserve(b.squares());
+		assert(b.squares() >= neighbor_masks.size());
 		for (unsigned int s = 0; s < b.squares(); ++s)
-			neighbor_masks.push_back(b.neighbors_mask(s));
+			neighbor_masks[s] = b.neighbors_mask(s);
 
 		for (unsigned int i = 0; i < board.squares(); ++i) {
 			board_choose_masks[1].push_back(1 << i);
@@ -139,7 +139,7 @@ struct SharedWorkspace {
 		//in rank order, so don't sort them.
 	}
 	const Board& board;
-	std::vector<uint32_t> neighbor_masks;
+	std::array<uint32_t, 26> neighbor_masks;
 	//board_choose_masks[i] is (squares choose i) masks for the position generator
 	std::array<std::vector<uint32_t>, 4> board_choose_masks;
 
