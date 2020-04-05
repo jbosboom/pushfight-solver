@@ -137,9 +137,22 @@ struct SharedWorkspace {
 		}
 		//The masks are already in the proper order for enumerating the states
 		//in rank order, so don't sort them.
+
+		for (Dir d : {LEFT, UP, RIGHT, DOWN}) {
+			uint32_t v = 0, r = 0;
+			for (unsigned int s = 0; s < b.squares(); ++s)
+				if (b.neighbor(s, d) == VOID)
+					v |= 1 << s;
+				else if (b.neighbor(s, d) == RAIL)
+					r |= 1 << s;
+			adjacent_to_void[d] = v;
+			adjacent_to_rail[d] = r;
+		}
 	}
 	const Board& board;
 	std::array<uint32_t, 26> neighbor_masks;
+	//for each direction, a mask of the squares immediately adjacent to VOID or RAIL
+	std::array<uint32_t, 4> adjacent_to_void, adjacent_to_rail;
 	//board_choose_masks[i] is (squares choose i) masks for the position generator
 	std::array<std::vector<uint32_t>, 4> board_choose_masks;
 
@@ -202,10 +215,10 @@ void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorks
 
 			while (true) {
 				unsigned int next = swork.board.neighbor(chain[chain_length-1], dir);
-				if (next == VOID) {
+				if (swork.adjacent_to_void[dir] & (1 << chain[chain_length-1])) {
 					removed_piece = remove_piece(succ, chain[chain_length-1]);
 					break;
-				} else if (next == RAIL) {
+				} else if (swork.adjacent_to_rail[dir] & (1 << chain[chain_length-1])) {
 					//TODO: if we have a torus, do we allow a circular push?
 					chain_length = 0;
 					break; //push not possible
