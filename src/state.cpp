@@ -202,7 +202,8 @@ void move_piece(State& state, unsigned int from, unsigned int to) {
 	move_bit(state.enemy_pawns, from, to);
 }
 
-void do_all_pushes(const State source, const SharedWorkspace& swork, StateVisitor& sv) {
+//returns true iff we should continue visiting
+bool do_all_pushes(const State source, const SharedWorkspace& swork, StateVisitor& sv) {
 	std::array<unsigned int, 10> chain;
 	unsigned int chain_length = 0;
 	for (unsigned int start : set_bits_range(source.allied_pushers)) {
@@ -242,9 +243,10 @@ void do_all_pushes(const State source, const SharedWorkspace& swork, StateVisito
 			std::swap(succ.allied_pawns, succ.enemy_pawns);
 
 			if (!sv.accept(succ, removed_piece))
-				return;
+				return false;
 		}
 	}
+	return true;
 }
 
 uint32_t connected_empty_space(unsigned int source, uint32_t blockers, const SharedWorkspace& work) {
@@ -266,12 +268,17 @@ uint32_t connected_empty_space(unsigned int source, uint32_t blockers, const Sha
 	return result;
 }
 
-void next_states(const State source, unsigned int move_number, const SharedWorkspace& swork, StateVisitor& sv) {
+//returns true iff we should continue visiting
+bool next_states(const State source, unsigned int move_number, const SharedWorkspace& swork, StateVisitor& sv) {
 	if (move_number == 0)
 		sv.begin(source);
 
+	bool returning_early = false;
 	if (swork.allowable_moves_mask & (1 << move_number))
-		do_all_pushes(source, swork, sv);
+		if (!do_all_pushes(source, swork, sv)) {
+			returning_early = true;
+			goto end;
+		}
 
 	if (move_number < swork.max_moves) {
 		//Make a move.
@@ -281,7 +288,10 @@ void next_states(const State source, unsigned int move_number, const SharedWorks
 				State next = source;
 				next.allied_pushers &= ~(1 << from);
 				next.allied_pushers |= (1 << to);
-				next_states(source, move_number+1, swork, sv);
+				if (!next_states(source, move_number+1, swork, sv)) {
+					returning_early = true;
+					goto end;
+				}
 			}
 		}
 		for (unsigned int from : set_bits_range(source.allied_pawns)) {
@@ -290,13 +300,18 @@ void next_states(const State source, unsigned int move_number, const SharedWorks
 				State next = source;
 				next.allied_pawns &= ~(1 << from);
 				next.allied_pawns |= (1 << to);
-				next_states(source, move_number+1, swork, sv);
+				if (!next_states(source, move_number+1, swork, sv)) {
+					returning_early = true;
+					goto end;
+				}
 			}
 		}
 	}
 
+	end:
 	if (move_number == 0)
 		sv.end(source);
+	return !returning_early;
 }
 
 
