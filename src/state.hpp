@@ -1,6 +1,7 @@
 #ifndef STATE_HPP
 #define STATE_HPP
 
+#include <memory>
 #include "board.hpp"
 
 namespace pushfight {
@@ -20,9 +21,16 @@ struct StateVisitor {
 	//return false to stop visiting
 	virtual bool accept(const State& state, char removed_piece) = 0;
 	virtual void end(const State& state) = 0;
+	virtual ~StateVisitor() = default;
+};
+
+struct ForkableStateVisitor : public StateVisitor {
+	virtual std::unique_ptr<ForkableStateVisitor> clone() const = 0;
+	virtual void merge(std::unique_ptr<ForkableStateVisitor> other) = 0;
 };
 
 void enumerate_anchored_states(const Board& board, StateVisitor& sv);
+void enumerate_anchored_states_threaded(unsigned int slice, const Board& board, ForkableStateVisitor& sv);
 
 }//namespace pushfight
 

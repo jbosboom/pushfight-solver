@@ -2,8 +2,12 @@
 #include "state.hpp"
 #include "board.hpp"
 #include "set_bits_range.hpp"
+#include <thread>
+#include <future>
 
 using std::uint32_t;
+using std::vector;
+using std::unique_ptr;
 
 namespace pushfight {
 
@@ -161,9 +165,6 @@ struct SharedWorkspace {
 	unsigned int allowable_moves_mask = 0b111; //0, 1 and 2 are all fine
 };
 
-struct ThreadWorkspace {
-};
-
 char remove_piece(State& state, unsigned int index) {
 	//Surprisingly, this is faster than a branchless solution that composes the
 	//bits to form an index into an array of char.
@@ -201,7 +202,7 @@ void move_piece(State& state, unsigned int from, unsigned int to) {
 	move_bit(state.enemy_pawns, from, to);
 }
 
-void do_all_pushes(const State source, const SharedWorkspace& swork, ThreadWorkspace& twork, StateVisitor& sv) {
+void do_all_pushes(const State source, const SharedWorkspace& swork, StateVisitor& sv) {
 	std::array<unsigned int, 10> chain;
 	unsigned int chain_length = 0;
 	for (unsigned int start : set_bits_range(source.allied_pushers)) {
@@ -265,12 +266,12 @@ uint32_t connected_empty_space(unsigned int source, uint32_t blockers, const Sha
 	return result;
 }
 
-void next_states(const State source, unsigned int move_number, const SharedWorkspace& swork, ThreadWorkspace& twork, StateVisitor& sv) {
+void next_states(const State source, unsigned int move_number, const SharedWorkspace& swork, StateVisitor& sv) {
 	if (move_number == 0)
 		sv.begin(source);
 
 	if (swork.allowable_moves_mask & (1 << move_number))
-		do_all_pushes(source, swork, twork, sv);
+		do_all_pushes(source, swork, sv);
 
 	if (move_number < swork.max_moves) {
 		//Make a move.
@@ -280,7 +281,7 @@ void next_states(const State source, unsigned int move_number, const SharedWorks
 				State next = source;
 				next.allied_pushers &= ~(1 << from);
 				next.allied_pushers |= (1 << to);
-				next_states(source, move_number+1, swork, twork, sv);
+				next_states(source, move_number+1, swork, sv);
 			}
 		}
 		for (unsigned int from : set_bits_range(source.allied_pawns)) {
@@ -289,7 +290,7 @@ void next_states(const State source, unsigned int move_number, const SharedWorks
 				State next = source;
 				next.allied_pawns &= ~(1 << from);
 				next.allied_pawns |= (1 << to);
-				next_states(source, move_number+1, swork, twork, sv);
+				next_states(source, move_number+1, swork, sv);
 			}
 		}
 	}
@@ -302,10 +303,8 @@ void next_states(const State source, unsigned int move_number, const SharedWorks
 
 void enumerate_anchored_states(const Board& board, StateVisitor& sv) {
 	SharedWorkspace swork(board);
-	ThreadWorkspace twork;
 	unsigned long count = 0;
-//	for (unsigned int p = 0; p < swork.board.anchorable_squares(); ++p) {
-	for (unsigned int p = 0; p < 1; ++p) {
+	for (unsigned int p = 0; p < swork.board.anchorable_squares(); ++p) {
 		State state = {};
 		state.enemy_pushers = 1 << p;
 		state.anchored_pieces = state.enemy_pushers;
@@ -314,7 +313,6 @@ void enumerate_anchored_states(const Board& board, StateVisitor& sv) {
 			if (epu_mask & state.blockers()) continue;
 			state.enemy_pushers |= epu_mask;
 			assert(std::popcount(state.enemy_pushers) == swork.board.pushers());
-			fmt::print("{}\n", epu_mask);
 
 			for (unsigned int epa_mask : swork.board_choose_masks[swork.board.pawns()]) {
 				if (epa_mask & state.blockers()) continue;
@@ -328,7 +326,7 @@ void enumerate_anchored_states(const Board& board, StateVisitor& sv) {
 						if (apa_mask & state.blockers()) continue;
 						state.allied_pawns = apa_mask;
 						++count;
-						next_states(state, 0, swork, twork, sv);
+						next_states(state, 0, swork, sv);
 						state.allied_pawns = 0;
 					}
 
@@ -345,6 +343,61 @@ void enumerate_anchored_states(const Board& board, StateVisitor& sv) {
 		state.anchored_pieces = 0;
 	}
 	fmt::print("{}\n", count);
+}
+
+void enumerate_anchored_states_threaded(unsigned int slice, const Board& board, ForkableStateVisitor& sv) {
+	assert(slice < board.anchorable_squares());
+	SharedWorkspace swork(board);
+	State base_state = {};
+	base_state.enemy_pushers = 1 << slice;
+	base_state.anchored_pieces = base_state.enemy_pushers;
+
+	auto work_function = [&](std::size_t index) -> unique_ptr<ForkableStateVisitor> {
+		unsigned int epu_mask = swork.board_choose_masks[swork.board.pushers() - 1][index];
+		if (epu_mask & base_state.blockers()) return nullptr;
+		unique_ptr<ForkableStateVisitor> result = sv.clone();
+		State state = base_state;
+		state.enemy_pushers |= epu_mask;
+		assert(std::popcount(state.enemy_pushers) == swork.board.pushers());
+
+		for (unsigned int epa_mask : swork.board_choose_masks[swork.board.pawns()]) {
+			if (epa_mask & state.blockers()) continue;
+			state.enemy_pawns = epa_mask;
+
+			for (unsigned int apu_mask : swork.board_choose_masks[swork.board.pushers()]) {
+				if (apu_mask & state.blockers()) continue;
+				state.allied_pushers = apu_mask;
+
+				for (unsigned int apa_mask : swork.board_choose_masks[swork.board.pawns()]) {
+					if (apa_mask & state.blockers()) continue;
+					state.allied_pawns = apa_mask;
+					next_states(state, 0, swork, *result);
+					state.allied_pawns = 0;
+				}
+
+				state.allied_pushers = 0;
+			}
+
+			state.enemy_pawns = 0;
+		}
+		return result;
+	};
+
+	auto task_count = swork.board_choose_masks[swork.board.pushers() - 1].size();
+	vector<unique_ptr<ForkableStateVisitor>> results;
+	results.resize(task_count);
+	std::atomic<std::size_t> index_dispenser;
+	vector<std::future<void>> futures;
+	std::size_t num_threads = std::thread::hardware_concurrency();
+	for (std::size_t i = 0; i < num_threads && i < task_count; ++i)
+		futures.push_back(std::async(std::launch::async, [&]() {
+			for (std::size_t index = index_dispenser++; index < task_count; index = index_dispenser++)
+				results[index] = work_function(index);
+		}));
+	for (std::size_t i = 0; i < futures.size(); ++i)
+		futures[i].wait();
+	for (std::size_t i = 0; i < results.size(); ++i)
+		sv.merge(std::move(results[i]));
 }
 
 } //namespace pushfight
