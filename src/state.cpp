@@ -397,7 +397,8 @@ void enumerate_anchored_states_threaded(unsigned int slice, const Board& board, 
 	for (std::size_t i = 0; i < futures.size(); ++i)
 		futures[i].wait();
 	for (std::size_t i = 0; i < results.size(); ++i)
-		sv.merge(std::move(results[i]));
+		if (results[i])
+			sv.merge(std::move(results[i]));
 }
 
 } //namespace pushfight
