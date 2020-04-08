@@ -17,7 +17,7 @@ struct State {
 unsigned long rank(State state, const Board& board);
 
 struct StateVisitor {
-	virtual void begin(const State& state) = 0;
+	virtual bool begin(const State& state) = 0;
 	//return false to stop visiting
 	virtual bool accept(const State& state, char removed_piece) = 0;
 	virtual void end(const State& state) = 0;

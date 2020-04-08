@@ -270,10 +270,13 @@ uint32_t connected_empty_space(unsigned int source, uint32_t blockers, const Sha
 
 //returns true iff we should continue visiting
 bool next_states(const State source, unsigned int move_number, const SharedWorkspace& swork, StateVisitor& sv) {
-	if (move_number == 0)
-		sv.begin(source);
-
 	bool returning_early = false;
+	if (move_number == 0)
+		if (!sv.begin(source)) {
+			returning_early = true;
+			goto end;
+		}
+
 	if (swork.allowable_moves_mask & (1 << move_number))
 		if (!do_all_pushes(source, swork, sv)) {
 			returning_early = true;

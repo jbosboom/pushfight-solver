@@ -21,9 +21,10 @@ struct InherentValueVisitor : public ForkableStateVisitor {
 	bool is_loss = true; //set false if we ever make a push that doesn't push off an allied piece
 	vector<unsigned long> win_ranks, loss_ranks;
 	vector<vector<pair<unsigned long, unsigned long>>> win_intervals, loss_intervals;
-	void begin(const State& state) override {
+	bool begin(const State& state) override {
 		is_win = false;
 		is_loss = true;
+		return true;
 	}
 	bool accept(const State& state, char removed_piece) override {
 		if (removed_piece == 'E' || removed_piece == 'e') {
