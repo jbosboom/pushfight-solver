@@ -76,21 +76,41 @@ struct InherentValueVisitor : public ForkableStateVisitor {
 	}
 };
 
-void write_intervals(vector<vector<pair<unsigned long, unsigned long>>>&& intervals, std::filesystem::path filename) {
-	FILE* f = std::fopen(filename.c_str(), "w+");
+void write_intervals(vector<vector<pair<unsigned long, unsigned long>>>&& intervals,
+		std::filesystem::path start_filename, std::filesystem::path length_filename) {
+	FILE* sf = std::fopen(start_filename.c_str(), "w+"),
+			*lf = std::fopen(length_filename.c_str(), "w+");
 	for (vector<pair<unsigned long, unsigned long>> v : intervals) {
-		std::size_t written = std::fwrite(v.data(), v.size() * sizeof(v.front()), 1, f);
-		if (written != 1) {
-			auto saved_errno = errno;
-			throw std::runtime_error(fmt::format("error writing {}: failed to write some intervals; error {} ({})",
-					filename.c_str(), strerror(saved_errno), saved_errno));
+		for (pair<unsigned long, unsigned long> i : v) {
+			//If an interval's size is greater than 255 we split it into multiple intervals.
+			for (unsigned long start = i.first; start < i.second;) {
+				unsigned long length = std::min(255ul, i.second - start);
+				std::size_t written = std::fwrite(&start, sizeof(start), 1, sf);
+				if (written != 1) {
+					auto saved_errno = errno;
+					throw std::runtime_error(fmt::format("error writing {}: failed to write start; error {} ({})",
+							start_filename.c_str(), strerror(saved_errno), saved_errno));
+				}
+				written = std::fwrite(&length, sizeof(std::uint8_t), 1, lf);
+				if (written != 1) {
+					auto saved_errno = errno;
+					throw std::runtime_error(fmt::format("error writing {}: failed to write length; error {} ({})",
+							start_filename.c_str(), strerror(saved_errno), saved_errno));
+				}
+				start += length;
+			}
 		}
 		vector<pair<unsigned long, unsigned long>> free_memory(std::move(v));
 	}
-	if (std::fclose(f)) {
+	if (std::fclose(sf)) {
 		auto saved_errno = errno;
-		throw std::runtime_error(fmt::format("error writing {}: failed to close?; error {} ({})",
-				filename.c_str(), strerror(saved_errno), saved_errno));
+		throw std::runtime_error(fmt::format("error writing {}: failed to close start file; error {} ({})",
+				start_filename.c_str(), strerror(saved_errno), saved_errno));
+	}
+	if (std::fclose(lf)) {
+		auto saved_errno = errno;
+		throw std::runtime_error(fmt::format("error writing {}: failed to close length file; error {} ({})",
+				start_filename.c_str(), strerror(saved_errno), saved_errno));
 	}
 }
 
@@ -119,10 +139,13 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 
 
 	if (*generation == 0) {
-		std::filesystem::path win_file = *data_dir / fmt::format("win-{}-{}.bin", *generation, *slice),
-				loss_file = *data_dir / fmt::format("loss-{}-{}.bin", *generation, *slice);
-		if (std::filesystem::exists(win_file) || std::filesystem::exists(loss_file)) {
-			fmt::print(stderr, "win or loss file exists; not overwriting\n");
+		std::filesystem::path win_start_file = *data_dir / fmt::format("win-{}-{}.bin", *generation, *slice),
+				win_length_file = *data_dir / fmt::format("win-{}-{}.len", *generation, *slice),
+				loss_start_file = *data_dir / fmt::format("loss-{}-{}.bin", *generation, *slice),
+				loss_length_file = *data_dir / fmt::format("loss-{}-{}.len", *generation, *slice);
+		if (std::filesystem::exists(win_start_file) || std::filesystem::exists(loss_start_file) ||
+				std::filesystem::exists(win_length_file) || std::filesystem::exists(loss_length_file)) {
+			fmt::print(stderr, "win or loss files exist; not overwriting\n");
 			return 1;
 		}
 
@@ -146,8 +169,8 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		std::sort(visitor.win_intervals.begin(), visitor.win_intervals.end());
 		std::sort(visitor.loss_intervals.begin(), visitor.loss_intervals.end());
 
-		write_intervals(std::move(visitor.win_intervals), win_file);
-		write_intervals(std::move(visitor.loss_intervals), loss_file);
+		write_intervals(std::move(visitor.win_intervals), win_start_file, win_length_file);
+		write_intervals(std::move(visitor.loss_intervals), loss_start_file, loss_length_file);
 		return 0;
 	} else {
 		fmt::print("TODO implement later generations");
