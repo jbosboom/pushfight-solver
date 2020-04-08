@@ -87,10 +87,10 @@ void write_intervals(vector<vector<pair<unsigned long, unsigned long>>>&& interv
 		}
 		vector<pair<unsigned long, unsigned long>> free_memory(std::move(v));
 	}
-	if (!std::fclose(f)) {
+	if (std::fclose(f)) {
 		auto saved_errno = errno;
-			throw std::runtime_error(fmt::format("error writing {}: failed to close?; error {} ({})",
-					filename.c_str(), strerror(saved_errno), saved_errno));
+		throw std::runtime_error(fmt::format("error writing {}: failed to close?; error {} ({})",
+				filename.c_str(), strerror(saved_errno), saved_errno));
 	}
 }
 
