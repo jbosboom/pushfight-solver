@@ -401,7 +401,7 @@ void enumerate_anchored_states_threaded(unsigned int slice, const Board& board, 
 	auto task_count = swork.board_choose_masks[swork.board.pushers() - 1].size();
 	vector<unique_ptr<ForkableStateVisitor>> results;
 	results.resize(task_count);
-	std::atomic<std::size_t> index_dispenser;
+	std::atomic<std::size_t> index_dispenser(0);
 	vector<std::future<void>> futures;
 	std::size_t num_threads = std::thread::hardware_concurrency();
 	for (std::size_t i = 0; i < num_threads && i < task_count; ++i)
