@@ -272,10 +272,8 @@ uint32_t connected_empty_space(unsigned int source, uint32_t blockers, const Sha
 bool next_states(const State source, unsigned int move_number, const SharedWorkspace& swork, StateVisitor& sv) {
 	bool returning_early = false;
 	if (move_number == 0)
-		if (!sv.begin(source)) {
-			returning_early = true;
-			goto end;
-		}
+		if (!sv.begin(source))
+			return false; //do not call sv.end
 
 	if (swork.allowable_moves_mask & (1 << move_number))
 		if (!do_all_pushes(source, swork, sv)) {
