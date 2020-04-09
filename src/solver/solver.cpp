@@ -13,11 +13,7 @@ using std::vector;
 using std::pair;
 using namespace std::literals::string_view_literals;
 
-/**
- * Computes the inherent value of a position (positions that are immediate wins
- * or losses, rather than positions they lead to).
- */
-struct InherentValueVisitor : public ForkableStateVisitor {
+struct IntervalVisitor : public ForkableStateVisitor {
 	unsigned long wins = 0, losses = 0, visited = 0;
 	bool is_win = false; //set true if we ever push off an enemy piece
 	bool is_loss = true; //set false if we ever make a push that doesn't push off an allied piece
@@ -28,14 +24,7 @@ struct InherentValueVisitor : public ForkableStateVisitor {
 		is_loss = true;
 		return true;
 	}
-	bool accept(const State& state, char removed_piece) override {
-		if (removed_piece == 'E' || removed_piece == 'e') {
-			is_win = true;
-			return false;
-		} else if (removed_piece != 'A' && removed_piece != 'a')
-			is_loss = false;
-		return true;
-	}
+
 	void end(const State& state) override {
 		++visited;
 		if (is_win) {
@@ -60,11 +49,8 @@ struct InherentValueVisitor : public ForkableStateVisitor {
 		}
 	}
 
-	std::unique_ptr<ForkableStateVisitor> clone() const override {
-		return std::make_unique<InherentValueVisitor>();
-	}
 	void merge(std::unique_ptr<ForkableStateVisitor> p) override {
-		InherentValueVisitor& other = dynamic_cast<InherentValueVisitor&>(*p);
+		IntervalVisitor& other = dynamic_cast<IntervalVisitor&>(*p);
 		//clean up any remainder
 		if (win_ranks.size())
 			win_intervals.push_back(maximal_intervals(win_ranks));
@@ -76,6 +62,24 @@ struct InherentValueVisitor : public ForkableStateVisitor {
 		visited += other.visited;
 		win_intervals.insert(win_intervals.end(), std::move_iterator(other.win_intervals.begin()), std::move_iterator(other.win_intervals.end()));
 		loss_intervals.insert(loss_intervals.end(), std::move_iterator(other.loss_intervals.begin()), std::move_iterator(other.loss_intervals.end()));
+	}
+};
+
+/**
+ * Computes the inherent value of a position (positions that are immediate wins
+ * or losses, rather than positions they lead to).
+ */
+struct InherentValueVisitor : public IntervalVisitor {
+	bool accept(const State& state, char removed_piece) override {
+		if (removed_piece == 'E' || removed_piece == 'e') {
+			is_win = true;
+			return false;
+		} else if (removed_piece != 'A' && removed_piece != 'a')
+			is_loss = false;
+		return true;
+	}
+	std::unique_ptr<ForkableStateVisitor> clone() const override {
+		return std::make_unique<InherentValueVisitor>();
 	}
 };
 
@@ -122,6 +126,39 @@ struct WinLossUnknownDatabase {
 			if (*p <= r && r < (*p + *q)) return d.v;
 		}
 		return UNKNOWN;
+	}
+};
+
+struct CompositeValueVisitor : public IntervalVisitor {
+	const WinLossUnknownDatabase* wldb;
+	CompositeValueVisitor(const WinLossUnknownDatabase* wldb) : wldb(wldb) {}
+
+	bool begin(const State& state) override {
+		auto r = rank(state, traditional);
+		if (wldb->query(r) != UNKNOWN)
+			return false;
+		return IntervalVisitor::begin(state);
+	}
+
+	bool accept(const State& state, char removed_piece) override {
+		if (removed_piece == 'E' || removed_piece == 'e')
+			throw std::logic_error("visiting an inherently winning configuration?");
+		if (removed_piece == 'A' || removed_piece == 'a')
+			//can't rank this because we removed a piece, but it doesn't affect
+			//whether this position is a win or a loss
+			return true;
+		auto value = wldb->query(rank(state, traditional));
+		if (value != WIN)
+			is_loss = false;
+		if (value == LOSS) {
+			is_win = true;
+			return false;
+		}
+		return true;
+	}
+
+	std::unique_ptr<ForkableStateVisitor> clone() const override {
+		return std::make_unique<CompositeValueVisitor>(wldb);
 	}
 };
 
@@ -195,32 +232,11 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		return 1;
 	}
 
-	if (*generation == 0) {
-		InherentValueVisitor visitor;
-		enumerate_anchored_states_threaded(*slice, traditional, visitor);
-		fmt::print("Processed generation {} slice {}.\n", *generation, *slice);
-		fmt::print("Visited {} states, found {} wins ({:.3f}) and {} losses ({:.3f}), total {} ({:.3f}) resolved.\n",
-				visitor.visited,
-				visitor.wins, (double)visitor.wins / (double)visitor.visited,
-				visitor.losses, (double)visitor.losses / (double)visitor.visited,
-				visitor.wins + visitor.losses, (double)(visitor.wins + visitor.losses) / (double)visitor.visited);
-		unsigned long total_win_intervals = 0, total_loss_intervals = 0;
-		for (auto& v : visitor.win_intervals)
-			total_win_intervals += v.size();
-		for (auto& v : visitor.loss_intervals)
-			total_loss_intervals += v.size();
-		fmt::print("{} win intervals ({:.5f}) and {} loss intervals ({:.5f}).\n",
-				total_win_intervals, (double)visitor.wins / (double)total_win_intervals,
-				total_loss_intervals, (double)visitor.losses / (double)total_loss_intervals);
-
-		//They should already be sorted, but be doubly-sure.
-		std::sort(visitor.win_intervals.begin(), visitor.win_intervals.end());
-		std::sort(visitor.loss_intervals.begin(), visitor.loss_intervals.end());
-
-		write_intervals(std::move(visitor.win_intervals), win_start_file, win_length_file);
-		write_intervals(std::move(visitor.loss_intervals), loss_start_file, loss_length_file);
-		return 0;
-	} else {
+	std::unique_ptr<IntervalVisitor> visitor_ptr;
+	std::unique_ptr<WinLossUnknownDatabase> wldb;
+	if (*generation == 0)
+		visitor_ptr = std::make_unique<InherentValueVisitor>();
+	else {
 		vector<std::filesystem::path> starts, lengths;
 		vector<GameValue> values;
 		for (unsigned int g = 0; g < *generation; ++g) {
@@ -231,8 +247,39 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 			for (std::filesystem::path p : {ws, wl, ls, ll})
 				if (!std::filesystem::is_regular_file(p))
 					throw std::runtime_error(fmt::format("expected {} to exist", p.c_str()));
-
+			starts.push_back(ws);
+			lengths.push_back(wl);
+			values.push_back(WIN);
+			starts.push_back(ls);
+			lengths.push_back(ll);
+			values.push_back(LOSS);
 		}
-		return 1;
+		wldb = std::make_unique<WinLossUnknownDatabase>(std::move(starts), std::move(lengths), std::move(values));
+		visitor_ptr = std::make_unique<CompositeValueVisitor>(wldb.get());
 	}
+
+	IntervalVisitor& visitor = *visitor_ptr;
+	enumerate_anchored_states_threaded(*slice, traditional, visitor);
+	fmt::print("Processed generation {} slice {}.\n", *generation, *slice);
+	fmt::print("Visited {} states, found {} wins ({:.3f}) and {} losses ({:.3f}), total {} ({:.3f}) resolved.\n",
+			visitor.visited,
+			visitor.wins, (double)visitor.wins / (double)visitor.visited,
+			visitor.losses, (double)visitor.losses / (double)visitor.visited,
+			visitor.wins + visitor.losses, (double)(visitor.wins + visitor.losses) / (double)visitor.visited);
+	unsigned long total_win_intervals = 0, total_loss_intervals = 0;
+	for (auto& v : visitor.win_intervals)
+		total_win_intervals += v.size();
+	for (auto& v : visitor.loss_intervals)
+		total_loss_intervals += v.size();
+	fmt::print("{} win intervals ({:.5f}) and {} loss intervals ({:.5f}).\n",
+			total_win_intervals, (double)visitor.wins / (double)total_win_intervals,
+			total_loss_intervals, (double)visitor.losses / (double)total_loss_intervals);
+
+	//They should already be sorted, but be doubly-sure.
+	std::sort(visitor.win_intervals.begin(), visitor.win_intervals.end());
+	std::sort(visitor.loss_intervals.begin(), visitor.loss_intervals.end());
+
+	write_intervals(std::move(visitor.win_intervals), win_start_file, win_length_file);
+	write_intervals(std::move(visitor.loss_intervals), loss_start_file, loss_length_file);
+	return 0;
 }
