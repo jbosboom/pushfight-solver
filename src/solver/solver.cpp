@@ -5,6 +5,8 @@
 #include "intervals.hpp"
 #include "util.hpp"
 #include <filesystem>
+#include <fcntl.h>
+#include <sys/mman.h> //for mmap
 
 using namespace pushfight;
 using std::vector;
@@ -77,6 +79,52 @@ struct InherentValueVisitor : public ForkableStateVisitor {
 	}
 };
 
+enum GameValue {WIN, LOSS, UNKNOWN};
+struct WinLossUnknownDatabase {
+	struct Data {
+		pair<unsigned long*, unsigned long*> start;
+		pair<std::uint8_t*, std::uint8_t*> length;
+		GameValue v;
+	};
+	vector<Data> data;
+	WinLossUnknownDatabase(vector<std::filesystem::path> starts, vector<std::filesystem::path> lengths, vector<GameValue> values) {
+		if (starts.size() != lengths.size() || lengths.size() != values.size())
+			throw std::logic_error("length mismatch in WinLossUnknownDatabase");
+		for (std::size_t i = 0; i < starts.size(); ++i) {
+			int fd = open(starts[i].c_str(), O_RDONLY);
+			auto ssz = std::filesystem::file_size(starts[i]);
+			void* sv = mmap(nullptr, ssz, PROT_READ, MAP_SHARED_VALIDATE, fd, 0);
+			close(fd);
+
+			fd = open(lengths[i].c_str(), O_RDONLY);
+			auto lsz = std::filesystem::file_size(lengths[i]);
+			void* lv = mmap(nullptr, lsz, PROT_READ, MAP_SHARED_VALIDATE, fd, 0);
+			close(fd);
+
+			Data d;
+			d.start.first = static_cast<unsigned long*>(sv);
+			d.start.second = d.start.first + ssz / sizeof(unsigned long);
+			d.length.first = static_cast<std::uint8_t*>(lv);
+			d.length.second = d.length.first + lsz / sizeof(std::uint8_t);
+			d.v = values[i];
+			data.push_back(d);
+		}
+	}
+
+	GameValue query(unsigned long r) const {
+		for (Data d : data) {
+			auto p = std::upper_bound(d.start.first, d.start.second, r);
+			if (p == d.start.first) continue;
+			--p;
+			auto offset = std::distance(d.start.first, p);
+			auto q = d.length.first;
+			std::advance(q, offset);
+			if (*p <= r && r < (*p + *q)) return d.v;
+		}
+		return UNKNOWN;
+	}
+};
+
 void write_intervals(vector<vector<pair<unsigned long, unsigned long>>>&& intervals,
 		std::filesystem::path start_filename, std::filesystem::path length_filename) {
 	FILE* sf = std::fopen(start_filename.c_str(), "w+"),
@@ -137,19 +185,17 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		fmt::print(stderr, "data dir not a directory (or does not exist)\n");
 		return 1;
 	}
-
+	std::filesystem::path win_start_file = *data_dir / fmt::format("win-{}-{}.bin", *generation, *slice),
+			win_length_file = *data_dir / fmt::format("win-{}-{}.len", *generation, *slice),
+			loss_start_file = *data_dir / fmt::format("loss-{}-{}.bin", *generation, *slice),
+			loss_length_file = *data_dir / fmt::format("loss-{}-{}.len", *generation, *slice);
+	if (std::filesystem::exists(win_start_file) || std::filesystem::exists(loss_start_file) ||
+			std::filesystem::exists(win_length_file) || std::filesystem::exists(loss_length_file)) {
+		fmt::print(stderr, "win or loss files exist; not overwriting\n");
+		return 1;
+	}
 
 	if (*generation == 0) {
-		std::filesystem::path win_start_file = *data_dir / fmt::format("win-{}-{}.bin", *generation, *slice),
-				win_length_file = *data_dir / fmt::format("win-{}-{}.len", *generation, *slice),
-				loss_start_file = *data_dir / fmt::format("loss-{}-{}.bin", *generation, *slice),
-				loss_length_file = *data_dir / fmt::format("loss-{}-{}.len", *generation, *slice);
-		if (std::filesystem::exists(win_start_file) || std::filesystem::exists(loss_start_file) ||
-				std::filesystem::exists(win_length_file) || std::filesystem::exists(loss_length_file)) {
-			fmt::print(stderr, "win or loss files exist; not overwriting\n");
-			return 1;
-		}
-
 		InherentValueVisitor visitor;
 		enumerate_anchored_states_threaded(0, traditional, visitor);
 		fmt::print("Visited {} states, found {} wins ({:.3f}) and {} losses ({:.3f}), total {} ({:.3f}) resolved.\n",
@@ -174,7 +220,18 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		write_intervals(std::move(visitor.loss_intervals), loss_start_file, loss_length_file);
 		return 0;
 	} else {
-		fmt::print("TODO implement later generations");
+		vector<std::filesystem::path> starts, lengths;
+		vector<GameValue> values;
+		for (unsigned int g = 0; g < *generation; ++g) {
+			std::filesystem::path ws = *data_dir / fmt::format("win-{}.bin", g),
+					wl = *data_dir / fmt::format("win-{}.len", g),
+					ls = *data_dir / fmt::format("loss-{}.bin", g),
+					ll = *data_dir / fmt::format("loss-{}.len", g);
+			for (std::filesystem::path p : {ws, wl, ls, ll})
+				if (!std::filesystem::is_regular_file(p))
+					throw std::runtime_error(fmt::format("expected {} to exist", p.c_str()));
+
+		}
 		return 1;
 	}
 }
