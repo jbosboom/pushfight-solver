@@ -197,7 +197,8 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 
 	if (*generation == 0) {
 		InherentValueVisitor visitor;
-		enumerate_anchored_states_threaded(0, traditional, visitor);
+		enumerate_anchored_states_threaded(*slice, traditional, visitor);
+		fmt::print("Processed generation {} slice {}.\n", *generation, *slice);
 		fmt::print("Visited {} states, found {} wins ({:.3f}) and {} losses ({:.3f}), total {} ({:.3f}) resolved.\n",
 				visitor.visited,
 				visitor.wins, (double)visitor.wins / (double)visitor.visited,
