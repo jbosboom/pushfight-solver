@@ -289,7 +289,7 @@ bool next_states(const State source, unsigned int move_number, const SharedWorks
 				State next = source;
 				next.allied_pushers &= ~(1 << from);
 				next.allied_pushers |= (1 << to);
-				if (!next_states(source, move_number+1, swork, sv)) {
+				if (!next_states(next, move_number+1, swork, sv)) {
 					returning_early = true;
 					goto end;
 				}
@@ -301,7 +301,7 @@ bool next_states(const State source, unsigned int move_number, const SharedWorks
 				State next = source;
 				next.allied_pawns &= ~(1 << from);
 				next.allied_pawns |= (1 << to);
-				if (!next_states(source, move_number+1, swork, sv)) {
+				if (!next_states(next, move_number+1, swork, sv)) {
 					returning_early = true;
 					goto end;
 				}
