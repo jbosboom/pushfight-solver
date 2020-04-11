@@ -106,9 +106,9 @@ struct WinLossUnknownDatabase {
 			close(fd);
 
 			Data d;
-			d.start.first = static_cast<unsigned long*>(sv);
+			d.start.first = reinterpret_cast<unsigned long*>(sv);
 			d.start.second = d.start.first + ssz / sizeof(unsigned long);
-			d.length.first = static_cast<std::uint8_t*>(lv);
+			d.length.first = reinterpret_cast<std::uint8_t*>(lv);
 			d.length.second = d.length.first + lsz / sizeof(std::uint8_t);
 			d.v = values[i];
 			data.push_back(d);
