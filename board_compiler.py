@@ -74,14 +74,14 @@ def partition_anchorable(area, rails):
 
 class Topology(object):
     def __init__(self, board_name, area, rails):
-        self.name = board_name+"_topo";
+        self.name = board_name+"_topo"
         self.anchorable, self.unanchorable = partition_anchorable(area, rails)
         self.index_map = {coord: index for (index, coord) in enumerate(self.anchorable + self.unanchorable)}
         self.data = []
         for index, coord in enumerate(self.anchorable + self.unanchorable):
             for dir in ('left', 'up', 'right', 'down'):
                 if (coord, dir) in rails:
-                    self.data.append("RAIL");
+                    self.data.append("RAIL")
                 else:
                     next = globals()[dir](coord)
                     self.data.append(self.index_map.get(next, "VOID"))
@@ -115,7 +115,7 @@ with open('src/board-defs.inc', 'w') as f:
         if not topology:
             topology = Topology(name, area, rails)
             topology_cache[(area, rails)] = topology
-            f.write('constexpr unsigned int {}[] = {{\n'.format(topology.name));
+            f.write('constexpr unsigned int {}[] = {{\n'.format(topology.name))
             for i in range(0, len(topology.data), 4):
                 f.write('\t')
                 f.write(' '.join([str(q)+',' for q in topology.data[i:i+4]]))
@@ -129,7 +129,7 @@ with open('src/board-defs.inc', 'w') as f:
             placement = placement_cache.get(placement_indices)
             if not placement:
                 placement = Placement(name, i, p, topology.index_map)
-                f.write('constexpr unsigned int {}[] = {{'.format(placement.name));
+                f.write('constexpr unsigned int {}[] = {{'.format(placement.name))
                 f.write(', '.join([str(q) for q in placement.data]))
                 f.write('};\n\n')
             placements.append(placement)
