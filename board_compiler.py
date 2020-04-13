@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 import re, yaml
 
@@ -16,16 +16,16 @@ def parse_coord_spec(s):
     mr, mc = int(match.group(3)), int(match.group(4))
     ret = set()
     if r == mr:
-      return {(r, q) for q in xrange(c, mc+1)}
+      return {(r, q) for q in range(c, mc+1)}
     elif c == mc:
-      return {(q, c) for q in xrange(r, mr+1)}
+      return {(q, c) for q in range(r, mr+1)}
     else:
       raise Exception('parse_coord_spec: not a line: '+s)
   match = RECTANGLE_SPEC.match(s)
   if match:
     r, c = int(match.group(1)), int(match.group(2))
     nr, nc = int(match.group(3)), int(match.group(4))
-    return {(p, q) for p in xrange(r, r+nr) for q in xrange(c, c+nc)}
+    return {(p, q) for p in range(r, r+nr) for q in range(c, c+nc)}
   raise Exception('parse_coord_spec: unknown: '+s)
 
 RAIL_SPEC = re.compile(r'^rail (up|down|left|right) (.+)$')
@@ -100,7 +100,7 @@ with open('boards.yaml', 'r') as f:
 with open('src/board-defs.inc', 'w') as f:
   topology_cache = {}
   placement_cache = {}
-  
+
   for board in data:
     name = board['name']
     pawns, pushers = board['pawns'], board['pushers']
@@ -110,18 +110,18 @@ with open('src/board-defs.inc', 'w') as f:
       raise Exception('too many placements for {}: {}'.format(name, len(placement_areas)))
     if len(placement_areas[0]) < pawns + pushers or len(placement_areas[1]) < pawns + pushers:
       raise Exception('placement area too small '+board)
-    
+
     topology = topology_cache.get((area, rails))
     if not topology:
       topology = Topology(name, area, rails)
       topology_cache[(area, rails)] = topology
       f.write('constexpr unsigned int {}[] = {{\n'.format(topology.name));
-      for i in xrange(0, len(topology.data), 4):
+      for i in range(0, len(topology.data), 4):
         f.write('\t')
         f.write(' '.join([str(q)+',' for q in topology.data[i:i+4]]))
         f.write('\n')
       f.write('};\n\n')
-    
+
     placements = []
     for i, p in enumerate(placement_areas):
       # dicts aren't hashable, so we have to do the mapping before looking up
@@ -133,6 +133,6 @@ with open('src/board-defs.inc', 'w') as f:
         f.write(', '.join([str(q) for q in placement.data]))
         f.write('};\n\n')
       placements.append(placement)
-    
+
     f.write('const Board {}{{{}, {}, {}, {}, {}, {}, {}, {}, {}, {}}};\n\n'.format(name, '"{}"'.format(name), len(area), len(topology.anchorable), pushers, pawns, topology.name, placements[0].name, len(placements[0].data), placements[1].name, len(placements[1].data)))
 
