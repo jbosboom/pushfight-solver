@@ -66,22 +66,14 @@ unsigned long rank(State state, const Board& board) {
 	//This is assuming there is exactly one anchored piece, an enemy pusher.
 	int anchored_pusher_idx = std::countr_zero(state.anchored_pieces);
 	result += anchored_pusher_idx;
-	result *= board.anchorable_squares();
 	pext_mask &= ~state.anchored_pieces;
 	--squares;
+	//In the past, we special-cased the first multiply to be by board.anchorable_squares()
+	//instead of squares.  That results in slices overlapping in rank numbers.
 
 	auto enemy_pushers = state.enemy_pushers & ~state.anchored_pieces;
 	enemy_pushers = pext2(enemy_pushers, pext_mask);
 	pext_mask &= ~state.enemy_pushers;
-	//We want to multiply by squares before adding in the next "digit" of the
-	//result, but the very first multiply is special (by anchorable_squares()).
-	//So we unroll the first iteration of this loop to omit the multiply.
-	if (enemy_pushers) {
-		int epu_low_bit = std::countr_zero(enemy_pushers);
-		result += epu_low_bit;
-		--squares;
-		enemy_pushers >>= epu_low_bit + 1;
-	}
 	while (enemy_pushers) {
 		int low_bit = std::countr_zero(enemy_pushers);
 		result *= squares;
