@@ -129,6 +129,7 @@ with open('src/board-defs.inc', 'w') as f:
             placement = placement_cache.get(placement_indices)
             if not placement:
                 placement = Placement(name, i, p, topology.index_map)
+                placement_cache[placement_indices] = placement
                 f.write('constexpr unsigned int {}[] = {{'.format(placement.name))
                 f.write(', '.join([str(q) for q in placement.data]))
                 f.write('};\n\n')
