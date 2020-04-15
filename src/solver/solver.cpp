@@ -3,6 +3,7 @@
 #include "board.hpp"
 #include "board-defs.inc"
 #include "intervals.hpp"
+#include "stopwatch.hpp"
 #include "util.hpp"
 #include <filesystem>
 #include <fcntl.h>
@@ -263,7 +264,9 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 	}
 
 	IntervalVisitor& visitor = *visitor_ptr;
+	Stopwatch stopwatch = Stopwatch::process();
 	enumerate_anchored_states_threaded(*slice, traditional, visitor);
+	auto times = stopwatch.elapsed();
 	fmt::print("Processed generation {} slice {}.\n", *generation, *slice);
 	fmt::print("Visited {} states, found {} wins ({:.3f}) and {} losses ({:.3f}), total {} ({:.3f}) resolved.\n",
 			visitor.visited,
@@ -278,6 +281,8 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 	fmt::print("{} win intervals ({:.5f}) and {} loss intervals ({:.5f}).\n",
 			total_win_intervals, (double)visitor.wins / (double)total_win_intervals,
 			total_loss_intervals, (double)visitor.losses / (double)total_loss_intervals);
+	fmt::print("{} seconds ({}), {} cpu-seconds ({:.2f}), {:.2f} GiB, {} hard faults.\n",
+			times.seconds(), times.hms(), times.cpuSeconds(), times.utilization(), times.highwaterGibibytes(), times.hardFaults());
 
 	//They should already be sorted, but be doubly-sure.
 	std::sort(visitor.win_intervals.begin(), visitor.win_intervals.end());
