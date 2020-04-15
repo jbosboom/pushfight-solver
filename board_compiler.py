@@ -1,6 +1,34 @@
 #!/usr/bin/env python3
 
 import re, yaml
+from types import SimpleNamespace
+from typing import Dict
+
+class SubscriptableNamespace(SimpleNamespace):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+    def __contains__(self, key):
+        return key in self.__dict__
+    def __getitem__(self, key):
+        return self.__dict__[key]
+    def __setitem__(self, key, value):
+         self.__dict__[key] = value
+    def __delitem__(self, key):
+        del self.__dict__[key]
+    # SimpleNamespace has value equality and is unhashable.  Identity equality is enough for
+    # our purposes -- we'd check MBIDs/etc. if we care about value.
+    def __hash__(self):
+        return id(self)
+    def __eq__(self, other):
+        return self is other
+    def copy(self):
+        """Returns a shallow copy of this object."""
+        x = SubscriptableNamespace()
+        x.update(self)
+        return x
+    def update(self, other):
+        self.__dict__.update(other.__dict__)
+
 
 SQUARE_SPEC = re.compile(r'^square \((\d+), (\d+)\)$')
 LINE_SPEC = re.compile(r'^line \((\d+), ?(\d+)\) \((\d+), ?(\d+)\)$')
@@ -100,40 +128,70 @@ with open('boards.yaml', 'r') as f:
 with open('src/board-defs.inc', 'w') as f:
     topology_cache = {}
     placement_cache = {}
+    boards: Dict[str, SubscriptableNamespace] = {}
 
-    for board in data:
-        name = board['name']
-        pawns, pushers = board['pawns'], board['pushers']
-        area, rails = parse_area(board['topology'])
-        placement_areas = [parse_area(p, allow_rails=False) for p in board['placement']]
-        if len(placement_areas) != 2:
-            raise Exception('too many placements for {}: {}'.format(name, len(placement_areas)))
-        if len(placement_areas[0]) < pawns + pushers or len(placement_areas[1]) < pawns + pushers:
-            raise Exception('placement area too small '+board)
+    for raw_board in data:
+        board = SubscriptableNamespace()
+        if 'inherits' in raw_board:
+            inherits = raw_board['inherits']
+            if isinstance(inherits, str):
+                board.update(boards[inherits])
+            elif isinstance(inherits, list):
+                for i in inherits:
+                    board.update(boards[i])
+            else:
+                raise ValueError('unrecognized inherits: ' + raw_board['inherits'])
 
-        topology = topology_cache.get((area, rails))
-        if not topology:
-            topology = Topology(name, area, rails)
-            topology_cache[(area, rails)] = topology
-            f.write('constexpr unsigned int {}[] = {{\n'.format(topology.name))
-            for i in range(0, len(topology.data), 4):
-                f.write('\t')
-                f.write(' '.join([str(q)+',' for q in topology.data[i:i+4]]))
-                f.write('\n')
-            f.write('};\n\n')
+        if raw_board['name'] in boards:
+            raise ValueError('duplicate board name ' + raw_board['name'])
+        board.name = raw_board['name']
+        boards[board.name] = board
 
-        placements = []
-        for i, p in enumerate(placement_areas):
-            # dicts aren't hashable, so we have to do the mapping before looking up
-            placement_indices = tuple(sorted(map(topology.index_map.get, p)))
-            placement = placement_cache.get(placement_indices)
-            if not placement:
-                placement = Placement(name, i, p, topology.index_map)
-                placement_cache[placement_indices] = placement
-                f.write('constexpr unsigned int {}[] = {{'.format(placement.name))
-                f.write(', '.join([str(q) for q in placement.data]))
+        COPYABLE_KEYS = ('pawns', 'pushers')
+        for k in COPYABLE_KEYS:
+            if k in raw_board:
+                board[k] = raw_board[k]
+
+        if 'topology' in raw_board:
+            area, rails = parse_area(raw_board['topology'])
+            topology = topology_cache.get((area, rails))
+            if not topology:
+                topology = Topology(board.name, area, rails)
+                topology_cache[(area, rails)] = topology
+                f.write('constexpr unsigned int {}[] = {{\n'.format(topology.name))
+                for i in range(0, len(topology.data), 4):
+                    f.write('\t')
+                    f.write(' '.join([str(q) + ',' for q in topology.data[i:i + 4]]))
+                    f.write('\n')
                 f.write('};\n\n')
-            placements.append(placement)
+            board.topology = topology
 
-        f.write('const Board {}{{{}, {}, {}, {}, {}, {}, {}, {}, {}, {}}};\n\n'.format(name, '"{}"'.format(name), len(area), len(topology.anchorable), pushers, pawns, topology.name, placements[0].name, len(placements[0].data), placements[1].name, len(placements[1].data)))
+        if 'placement' in raw_board:
+            placement_areas = [parse_area(p, allow_rails=False) for p in raw_board['placement']]
+            if len(placement_areas) != 2:
+                raise Exception('too many placements for {}: {}'.format(board.name, len(placement_areas)))
+            if len(placement_areas[0]) < board.pawns + board.pushers or len(placement_areas[1]) < board.pawns + board.pushers:
+                raise Exception('placement area too small ' + raw_board)
+            board.placements = []
+            for i, p in enumerate(placement_areas):
+                # dicts aren't hashable, so we have to do the mapping before looking up
+                placement_indices = tuple(sorted(map(topology.index_map.get, p)))
+                placement = placement_cache.get(placement_indices)
+                if not placement:
+                    placement = Placement(board.name, i, p, topology.index_map)
+                    placement_cache[placement_indices] = placement
+                    f.write('constexpr unsigned int {}[] = {{'.format(placement.name))
+                    f.write(', '.join([str(q) for q in placement.data]))
+                    f.write('};\n\n')
+                board.placements.append(placement)
+
+    for board in boards.values():
+        f.write('const Board {}{{{}, {}, {}, {}, {}, {}, {}, {}, {}, {}}};\n\n'.format(
+            board.name, '"{}"'.format(board.name),
+            len(board.topology.anchorable) + len(board.topology.unanchorable),
+            len(board.topology.anchorable),
+            board.pushers, board.pawns,
+            board.topology.name,
+            board.placements[0].name, len(board.placements[0].data),
+            board.placements[1].name, len(board.placements[1].data)))
 
