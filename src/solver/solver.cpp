@@ -49,13 +49,17 @@ struct IntervalVisitor : public ForkableStateVisitor {
 		}
 	}
 
-	void merge(std::unique_ptr<ForkableStateVisitor> p) override {
-		IntervalVisitor& other = dynamic_cast<IntervalVisitor&>(*p);
+	void prepare_for_merge() {
 		//clean up any remainder
 		if (win_ranks.size())
 			win_intervals.push_back(maximal_intervals(win_ranks));
 		if (loss_ranks.size())
 			loss_intervals.push_back(maximal_intervals(loss_ranks));
+	}
+
+	void merge(std::unique_ptr<ForkableStateVisitor> p) override {
+		IntervalVisitor& other = dynamic_cast<IntervalVisitor&>(*p);
+		other.prepare_for_merge();
 
 		wins += other.wins;
 		losses += other.losses;
