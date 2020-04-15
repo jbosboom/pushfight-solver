@@ -282,6 +282,13 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 	//They should already be sorted, but be doubly-sure.
 	std::sort(visitor.win_intervals.begin(), visitor.win_intervals.end());
 	std::sort(visitor.loss_intervals.begin(), visitor.loss_intervals.end());
+	//IntervalVisitor assumes a given visitor object will either be the parent
+	//being merged into or an actual visitor, not both.  The parent shouldn't
+	//have any singleton ranks of its own because it never visits.  Ideally we
+	//would change the design of ForkableStateVisitor to not inherit from
+	//StateVisitor, but in lieu of that, at least fail noisily.
+	if (visitor.win_ranks.size() || visitor.loss_ranks.size())
+		throw std::logic_error("unmerged singleton ranks?");
 
 	write_intervals(std::move(visitor.win_intervals), win_start_file, win_length_file);
 	write_intervals(std::move(visitor.loss_intervals), loss_start_file, loss_length_file);
