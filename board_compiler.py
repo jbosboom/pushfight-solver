@@ -123,7 +123,7 @@ class Placement(object):
 
 
 with open('boards.yaml', 'r') as f:
-    data = yaml.load(f)
+    data = yaml.safe_load(f)
 
 with open('src/board-defs.inc', 'w') as f:
     topology_cache = {}
