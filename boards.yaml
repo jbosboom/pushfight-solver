@@ -23,13 +23,17 @@
       - remove square (3, 6)
       - remove square (3, 7)
 
+- name: traditional2k3p
+  inherits: traditional
+  pawns: 3
+  pushers: 2
+
 - name: traditional_noholes
+  inherits: traditional
   topology:
     - add rectangle (0, 0) 4 8
     - rail up line (0, 0) (0, 7)
     - rail down line (3, 0) (3, 7)
-  pawns: 2
-  pushers: 3
   placement:
     -
       - add rectangle (0, 0) 4 4
