@@ -1,6 +1,8 @@
 #ifndef PUSHFIGHT_BOARD_HPP_INCLUDED
 #define PUSHFIGHT_BOARD_HPP_INCLUDED
 
+#include <algorithm>
+
 namespace pushfight {
 
 //TODO: we may want a bit-check here (high or second-high bit set) instead of values
@@ -44,6 +46,18 @@ public:
 		for (unsigned int n : neighbors(square))
 			if (n != VOID && n != RAIL)
 				m |= (1 << n);
+		return m;
+	}
+
+	//we should really just expose moves as a std::span and let SharedWorkspace
+	//process it as it wants, but this is expedient while we wait for std::span
+	unsigned int max_moves() const {
+		return *std::max_element(allowed_moves_, allowed_moves_+allowed_moves_len_);
+	}
+	std::uint32_t allowed_moves_mask() const {
+		std::uint32_t m = 0;
+		for (unsigned int i = 0; i < allowed_moves_len_; ++i)
+			m |= 1 << allowed_moves_[i];
 		return m;
 	}
 private:
