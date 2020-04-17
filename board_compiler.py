@@ -2,7 +2,8 @@
 
 import re, yaml
 from types import SimpleNamespace
-from typing import Dict
+from typing import Dict, Tuple
+
 
 class SubscriptableNamespace(SimpleNamespace):
     def __init__(self, **kwargs):
@@ -128,6 +129,7 @@ with open('boards.yaml', 'r') as f:
 with open('src/board-defs.inc', 'w') as f:
     topology_cache = {}
     placement_cache = {}
+    moves_cache: Dict[Tuple[int, ...], Tuple[str, int]] = {}
     boards: Dict[str, SubscriptableNamespace] = {}
 
     for raw_board in data:
@@ -164,6 +166,12 @@ with open('src/board-defs.inc', 'w') as f:
                     f.write(' '.join([str(q) + ',' for q in topology.data[i:i + 4]]))
                     f.write('\n')
                 f.write('};\n\n')
+
+                inv_index_map = {index: coord for coord, index in topology.index_map.items()}
+                f.write('constexpr std::pair<unsigned int, unsigned int> {}[] = {{\n'.format(topology.name+'_coords'))
+                for i in range(len(inv_index_map)):
+                    f.write('\t{{{}, {}}},\n'.format(*inv_index_map[i]))
+                f.write('};\n\n')
             board.topology = topology
 
         if 'placement' in raw_board:
@@ -185,13 +193,27 @@ with open('src/board-defs.inc', 'w') as f:
                     f.write('};\n\n')
                 board.placements.append(placement)
 
+        if 'moves' in raw_board:
+            raw_moves = tuple(sorted(raw_board['moves']))
+            moves = moves_cache.get(raw_moves)
+            if not moves:
+                moves_name = 'moves_' + '_'.join(str(m) for m in raw_moves)
+                f.write('constexpr unsigned int {}[] = {{'.format(moves_name))
+                f.write(','.join(str(m) for m in raw_moves))
+                f.write('};\n\n')
+                moves = moves_name, len(raw_moves)
+                moves_cache[raw_moves] = moves
+            board.moves_name, board.moves_length = moves
+
     for board in boards.values():
-        f.write('const Board {}{{{}, {}, {}, {}, {}, {}, {}, {}, {}, {}}};\n\n'.format(
+        f.write('const Board {}{{{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}}};\n\n'.format(
             board.name, '"{}"'.format(board.name),
             len(board.topology.anchorable) + len(board.topology.unanchorable),
             len(board.topology.anchorable),
             board.pushers, board.pawns,
-            board.topology.name,
+            board.topology.name, board.topology.name+'_coords',
             board.placements[0].name, len(board.placements[0].data),
-            board.placements[1].name, len(board.placements[1].data)))
+            board.placements[1].name, len(board.placements[1].data),
+            board.moves_name, board.moves_length,
+        ))
 

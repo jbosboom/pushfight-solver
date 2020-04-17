@@ -13,12 +13,15 @@ class Board {
 public:
 	Board(std::string_view name, unsigned int squares, unsigned int anchorables,
 			unsigned int pushers, unsigned int pawns, const unsigned int* topology,
+			const std::pair<unsigned int, unsigned int>* square_to_coord,
 			const unsigned int* placement_first, unsigned int placement_first_len,
-			const unsigned int* placement_second, unsigned int placement_second_len)
+			const unsigned int* placement_second, unsigned int placement_second_len,
+			const unsigned int* allowed_moves, unsigned int allowed_moves_len)
 	: name_(name), squares_(squares), anchorables_(anchorables), pushers_(pushers),
-			pawns_(pawns), topology_(topology), placement_first_(placement_first),
-			placement_second_(placement_second), placement_first_len_(placement_first_len),
-			placement_second_len_(placement_second_len) {}
+			pawns_(pawns), topology_(topology), square_to_coord_(square_to_coord),
+			placement_first_(placement_first), placement_second_(placement_second),
+			placement_first_len_(placement_first_len), placement_second_len_(placement_second_len),
+			allowed_moves_(allowed_moves), allowed_moves_len_(allowed_moves_len) {}
 
 	unsigned int pushers() const {return pushers_;}
 	unsigned int pawns() const {return pawns_;}
@@ -47,9 +50,12 @@ private:
 	std::string_view name_;
 	unsigned int squares_, anchorables_, pushers_, pawns_;
 	const unsigned int* topology_;
+	const std::pair<unsigned int, unsigned int>* square_to_coord_;
 	//TODO: should be some kind of array_view/span
 	const unsigned int* placement_first_, *placement_second_;
 	unsigned int placement_first_len_, placement_second_len_;
+	const unsigned int* allowed_moves_;
+	unsigned int allowed_moves_len_;
 };
 
 }

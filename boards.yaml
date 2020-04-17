@@ -22,6 +22,7 @@
       - remove square (0, 7)
       - remove square (3, 6)
       - remove square (3, 7)
+  moves: [0, 1, 2]
 
 - name: traditional2k3p
   inherits: traditional
