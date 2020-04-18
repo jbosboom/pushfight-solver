@@ -100,13 +100,18 @@ struct WinLossUnknownDatabase {
 		if (starts.size() != lengths.size() || lengths.size() != values.size())
 			throw std::logic_error("length mismatch in WinLossUnknownDatabase");
 		for (std::size_t i = 0; i < starts.size(); ++i) {
-			int fd = open(starts[i].c_str(), O_RDONLY);
 			auto ssz = std::filesystem::file_size(starts[i]);
+			auto lsz = std::filesystem::file_size(lengths[i]);
+			if (ssz == 0 && lsz == 0) continue;
+			if (ssz == 0 || lsz == 0)
+				throw std::logic_error(fmt::format("empty/nonempty mismatch between {} and {}",
+						starts[i].c_str(), lengths[i].c_str()));
+
+			int fd = open(starts[i].c_str(), O_RDONLY);
 			void* sv = mmap(nullptr, ssz, PROT_READ, MAP_SHARED_VALIDATE, fd, 0);
 			close(fd);
 
 			fd = open(lengths[i].c_str(), O_RDONLY);
-			auto lsz = std::filesystem::file_size(lengths[i]);
 			void* lv = mmap(nullptr, lsz, PROT_READ, MAP_SHARED_VALIDATE, fd, 0);
 			close(fd);
 
