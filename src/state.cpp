@@ -57,6 +57,22 @@ Integer pext2(Integer val, Integer mask) {
 }
 
 unsigned long rank(State state, const Board& board) {
+	if (state.allied_pawns & state.allied_pushers ||
+			state.allied_pawns & state.enemy_pawns ||
+			state.allied_pawns & state.enemy_pushers ||
+			state.allied_pushers & state.enemy_pawns ||
+			state.allied_pushers & state.enemy_pushers ||
+			state.enemy_pawns & state.enemy_pushers) {
+		throw std::logic_error(fmt::format("multiple pieces on square: {:b} {:b} {:b} {:b} {:b}",
+				state.allied_pawns, state.allied_pushers, state.enemy_pawns, state.enemy_pushers, state.anchored_pieces));
+	}
+	if (std::popcount(state.blockers()) != 2 * (board.pawns() + board.pushers()))
+		throw std::logic_error(fmt::format("too few pieces: {:b} {:b} {:b} {:b} {:b}",
+				state.allied_pawns, state.allied_pushers, state.enemy_pawns, state.enemy_pushers, state.anchored_pieces));
+	if (!(state.anchored_pieces & state.enemy_pushers))
+		throw std::logic_error(fmt::format("enemy pusher not anchored: {:b} {:b} {:b} {:b} {:b}",
+				state.allied_pawns, state.allied_pushers, state.enemy_pawns, state.enemy_pushers, state.anchored_pieces));
+
 	unsigned long result = 0;
 	//The bits that haven't been used yet.
 	unsigned int pext_mask = (1 << board.squares()) - 1;
