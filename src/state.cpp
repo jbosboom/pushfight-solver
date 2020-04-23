@@ -241,7 +241,7 @@ bool do_all_pushes(const State source, const SharedWorkspace& swork, StateVisito
 }
 
 uint32_t connected_empty_space(unsigned int source, uint32_t blockers, const SharedWorkspace& work) {
-	uint32_t result = (work.neighbor_masks[source] & blockers) | (1 << source);
+	uint32_t result = (work.neighbor_masks[source] & ~blockers) | (1 << source);
 	uint32_t expanded = 1 << source;
 //	fmt::print("{:b} {:b}\n", result, expanded);
 
@@ -249,13 +249,14 @@ uint32_t connected_empty_space(unsigned int source, uint32_t blockers, const Sha
 		uint32_t old_result = result, unexpanded = result & ~expanded;
 		for (unsigned int bit : set_bits_range(unexpanded)) {
 			assert(bit < work.board.squares());
-			result |= work.neighbor_masks[bit] & blockers;
+			result |= work.neighbor_masks[bit] & ~blockers;
 //			fmt::print("{} {:b} {:b}\n", bit, result, expanded);
 		}
 		expanded = old_result;
 	}
 	//avoid no-op move to where we started from
 	result &= ~(1 << source);
+	assert(!(result & blockers)); //shouldn't ever have blockers in empty space
 	return result;
 }
 
