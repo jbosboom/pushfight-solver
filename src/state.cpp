@@ -120,7 +120,7 @@ unsigned long rank(State state, const Board& board) {
 struct SharedWorkspace {
 	SharedWorkspace(const Board& b) : board(b), max_moves(board.max_moves()),
 			allowable_moves_mask(board.allowed_moves_mask()) {
-		assert(b.squares() >= neighbor_masks.size());
+		assert(b.squares() < neighbor_masks.size());
 		for (unsigned int s = 0; s < b.squares(); ++s)
 			neighbor_masks[s] = b.neighbors_mask(s);
 
