@@ -194,7 +194,7 @@ char remove_piece(State& state, unsigned int index) {
 template<typename Integer>
 bool move_bit(Integer& x, unsigned int from, unsigned int to) {
 	auto bit = (x & (1u << from)) >> from;
-	x &= (1u << from);
+	x &= ~(1u << from);
 	x |= (bit << to);
 	return bit;
 }
