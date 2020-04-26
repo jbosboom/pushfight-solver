@@ -234,11 +234,15 @@ bool do_all_pushes(const State source, const SharedWorkspace& swork, StateVisito
 				} else if (source.anchored_pieces & (1 << next)) {
 					chain_length = 0;
 					break;
-				} else if (source.blockers() & (1 << next))
+				} else {
 					chain[chain_length++] = next;
-				else
-					break;
+					if (!(source.blockers() & (1 << next))) //if we just added an empty square
+						break;
+				}
 			}
+			//"Pushing nothing" results in chain length 2 (the pusher and an
+			//empty square).  This also handles impossible pushes (explicitly
+			//set to 0).
 			if (chain_length < 2)
 				continue;
 
