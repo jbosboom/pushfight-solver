@@ -232,10 +232,10 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		fmt::print(stderr, "data dir not a directory (or does not exist)\n");
 		return 1;
 	}
-	std::filesystem::path win_start_file = *data_dir / fmt::format("win-{}-{}.bin", *generation, *slice),
-			win_length_file = *data_dir / fmt::format("win-{}-{}.len", *generation, *slice),
-			loss_start_file = *data_dir / fmt::format("loss-{}-{}.bin", *generation, *slice),
-			loss_length_file = *data_dir / fmt::format("loss-{}-{}.len", *generation, *slice);
+	std::filesystem::path win_start_file = *data_dir / fmt::format("win-{}-{:02}.bin", *generation, *slice),
+			win_length_file = *data_dir / fmt::format("win-{}-{:02}.len", *generation, *slice),
+			loss_start_file = *data_dir / fmt::format("loss-{}-{:02}.bin", *generation, *slice),
+			loss_length_file = *data_dir / fmt::format("loss-{}-{:02}.len", *generation, *slice);
 	if (std::filesystem::exists(win_start_file) || std::filesystem::exists(loss_start_file) ||
 			std::filesystem::exists(win_length_file) || std::filesystem::exists(loss_length_file)) {
 		fmt::print(stderr, "win or loss files exist; not overwriting\n");
