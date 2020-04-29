@@ -422,8 +422,10 @@ void enumerate_anchored_states_threaded(unsigned int slice, const Board& board, 
 			for (std::size_t index = index_dispenser++; index < task_count; index = index_dispenser++)
 				results[index] = work_function(index);
 		}));
-	for (std::size_t i = 0; i < futures.size(); ++i)
+	for (std::size_t i = 0; i < futures.size(); ++i) {
 		futures[i].wait();
+		futures[i].get(); //rethrow any exception from the thread
+	}
 	for (std::size_t i = 0; i < results.size(); ++i)
 		if (results[i])
 			sv.merge(std::move(results[i]));
