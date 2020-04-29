@@ -3,6 +3,7 @@
 #include "board.hpp"
 #include "board-defs.inc"
 #include "intervals.hpp"
+#include "interpolation.hpp"
 #include "stopwatch.hpp"
 #include "util.hpp"
 #include <filesystem>
@@ -127,7 +128,7 @@ struct WinLossUnknownDatabase {
 
 	GameValue query(unsigned long r) const {
 		for (Data d : data) {
-			auto p = std::upper_bound(d.start.first, d.start.second, r);
+			auto p = interp::upper_bound(d.start.first, d.start.second, r);
 			if (p == d.start.first) continue;
 			--p;
 			auto offset = std::distance(d.start.first, p);
