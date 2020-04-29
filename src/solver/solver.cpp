@@ -6,6 +6,7 @@
 #include "interpolation.hpp"
 #include "stopwatch.hpp"
 #include "util.hpp"
+#include "hopscotch/hopscotch_set.h"
 #include <filesystem>
 #include <fcntl.h>
 #include <sys/mman.h> //for mmap
@@ -32,7 +33,7 @@ struct IntervalVisitor : public ForkableStateVisitor {
 		if (is_win) {
 			++wins;
 			//TODO: board should be passed in from elsewhere
-			auto r = rank(state, traditional);
+			auto r = rank(state, mini);
 			if (win_ranks.size() * sizeof(win_ranks.front()) >= 16*1024*1024 &&
 					r != win_ranks.back() + 1) {
 				win_intervals.push_back(maximal_intervals(win_ranks));
@@ -142,9 +143,11 @@ struct WinLossUnknownDatabase {
 
 struct CompositeValueVisitor : public IntervalVisitor {
 	const WinLossUnknownDatabase* wldb;
+	tsl::hopscotch_set<unsigned long> already_processed;
 	CompositeValueVisitor(const WinLossUnknownDatabase* wldb) : wldb(wldb) {}
 
 	bool begin(const State& state) override {
+		already_processed.clear();
 		auto r = rank(state, traditional);
 		if (wldb->query(r) != UNKNOWN)
 			return false;
@@ -158,7 +161,10 @@ struct CompositeValueVisitor : public IntervalVisitor {
 			//can't rank this because we removed a piece, but it doesn't affect
 			//whether this position is a win or a loss
 			return true;
-		auto value = wldb->query(rank(state, traditional));
+		auto r = rank(state, traditional);
+		if (!already_processed.insert(r).second)
+			return true;
+		auto value = wldb->query(r);
 		if (value != WIN)
 			is_loss = false;
 		if (value == LOSS) {
