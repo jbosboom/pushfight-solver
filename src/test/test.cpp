@@ -91,13 +91,13 @@ TEST_CASE("Interpolation_UpperBound03") {
 	std::uniform_int_distribution<unsigned long> dist(
 			std::numeric_limits<unsigned long>::min(),
 			std::numeric_limits<unsigned long>::max());
-	vector<unsigned int> haystack;
+	vector<unsigned long> haystack;
 	haystack.reserve(20000);
 	for (unsigned int i = 0; i < 20000; ++i)
 		haystack.push_back(dist(gen));
 	std::sort(haystack.begin(), haystack.end());
 	haystack.erase(std::unique(haystack.begin(), haystack.end()), haystack.end());
-	vector<unsigned int> needles;
+	vector<unsigned long> needles;
 	for (unsigned int i = 0; i < 1000; ++i)
 		needles.push_back(dist(gen));
 	for (auto n : needles) {
