@@ -7,6 +7,7 @@
 #include "stopwatch.hpp"
 #include "util.hpp"
 #include "hopscotch/hopscotch_set.h"
+#include "hopscotch/hopscotch_map.h"
 #include <filesystem>
 #include <fcntl.h>
 #include <sys/mman.h> //for mmap
@@ -217,6 +218,58 @@ void write_intervals(vector<vector<pair<unsigned long, unsigned long>>>&& interv
 	}
 }
 
+struct OutcountingVisitor : public ForkableStateVisitor {
+	tsl::hopscotch_map<unsigned long, vector<unsigned long>> succ_to_pred;
+	tsl::hopscotch_map<unsigned long, std::uint32_t> outcounts;
+	const WinLossUnknownDatabase* wldb;
+	tsl::hopscotch_set<unsigned long> successors;
+	unsigned long current_rank = 0;
+	OutcountingVisitor(const WinLossUnknownDatabase* wldb) : wldb(wldb) {}
+
+	bool begin(const State& state) override {
+		current_rank = rank(state, traditional);
+		if (wldb->query(current_rank) != UNKNOWN)
+			return false;
+		successors.clear();
+		return true;
+	}
+
+	bool accept(const State& state, char removed_piece) override {
+		if (removed_piece == 'E' || removed_piece == 'e')
+			throw std::logic_error("visiting an inherently winning configuration?");
+		if (removed_piece == 'A' || removed_piece == 'a')
+			//can't rank this because we removed a piece, but it doesn't affect
+			//whether this position is a win or a loss
+			return true;
+		auto r = rank(state, traditional);
+		successors.insert(r);
+		return true;
+	}
+
+	void end(const State& state) override {
+		auto outcounts_insert_result = outcounts.try_emplace(current_rank, successors.size());
+		if (!outcounts_insert_result.second)
+			throw std::logic_error("failed to insert outcounts");
+		for (auto succ : successors)
+			succ_to_pred[succ].push_back(current_rank);
+	}
+
+	std::unique_ptr<ForkableStateVisitor> clone() const override {
+		return std::make_unique<OutcountingVisitor>(wldb);
+	}
+
+	void merge(std::unique_ptr<ForkableStateVisitor> p) override {
+		OutcountingVisitor& other = dynamic_cast<OutcountingVisitor&>(*p);
+		outcounts.insert(other.outcounts.begin(), other.outcounts.end());
+		{tsl::hopscotch_map<unsigned long, std::uint32_t> free_memory(std::move(other.outcounts));}
+		for (const std::pair<unsigned long, vector<unsigned long>>& x : other.succ_to_pred) {
+			vector<unsigned long>& mine = succ_to_pred[x.first]; //creates if not present
+			mine.insert(mine.end(), x.second.begin(), x.second.end());
+//			vector<unsigned long> free_memory(std::move(x.second));
+		}
+	}
+};
+
 int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''}
 	std::optional<unsigned int> generation, slice;
 	std::optional<std::filesystem::path> data_dir;
@@ -249,11 +302,47 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		return 1;
 	}
 
-	std::unique_ptr<IntervalVisitor> visitor_ptr;
-	std::unique_ptr<WinLossUnknownDatabase> wldb;
-	if (*generation == 0)
+	if (*generation == 0) {
+		std::unique_ptr<IntervalVisitor> visitor_ptr;
 		visitor_ptr = std::make_unique<InherentValueVisitor>();
-	else {
+		IntervalVisitor& visitor = *visitor_ptr;
+
+		Stopwatch stopwatch = Stopwatch::process();
+		enumerate_anchored_states_threaded(*slice, traditional, *visitor_ptr);
+		auto times = stopwatch.elapsed();
+
+		fmt::print("Processed generation {} slice {}.\n", *generation, *slice);
+		fmt::print("Visited {} states, found {} wins ({:.3f}) and {} losses ({:.3f}), total {} ({:.3f}) resolved.\n",
+				visitor.visited,
+				visitor.wins, (double)visitor.wins / (double)visitor.visited,
+				visitor.losses, (double)visitor.losses / (double)visitor.visited,
+				visitor.wins + visitor.losses, (double)(visitor.wins + visitor.losses) / (double)visitor.visited);
+		unsigned long total_win_intervals = 0, total_loss_intervals = 0;
+		for (auto& v : visitor.win_intervals)
+			total_win_intervals += v.size();
+		for (auto& v : visitor.loss_intervals)
+			total_loss_intervals += v.size();
+		fmt::print("{} win intervals ({:.5f}) and {} loss intervals ({:.5f}).\n",
+				total_win_intervals, (double)visitor.wins / (double)total_win_intervals,
+				total_loss_intervals, (double)visitor.losses / (double)total_loss_intervals);
+		fmt::print("{} seconds ({}), {} cpu-seconds ({:.2f}), {:.2f} GiB, {} hard faults.\n",
+				times.seconds(), times.hms(), times.cpuSeconds(), times.utilization(), times.highwaterGibibytes(), times.hardFaults());
+
+		//They should already be sorted, but be doubly-sure.
+		std::sort(visitor.win_intervals.begin(), visitor.win_intervals.end());
+		std::sort(visitor.loss_intervals.begin(), visitor.loss_intervals.end());
+		//IntervalVisitor assumes a given visitor object will either be the parent
+		//being merged into or an actual visitor, not both.  The parent shouldn't
+		//have any singleton ranks of its own because it never visits.  Ideally we
+		//would change the design of ForkableStateVisitor to not inherit from
+		//StateVisitor, but in lieu of that, at least fail noisily.
+		if (visitor.win_ranks.size() || visitor.loss_ranks.size())
+			throw std::logic_error("unmerged singleton ranks?");
+
+		write_intervals(std::move(visitor.win_intervals), win_start_file, win_length_file);
+		write_intervals(std::move(visitor.loss_intervals), loss_start_file, loss_length_file);
+		return 0;
+	} else {
 		vector<std::filesystem::path> starts, lengths;
 		vector<GameValue> values;
 		for (unsigned int g = 0; g < *generation; ++g) {
@@ -271,43 +360,10 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 			lengths.push_back(ll);
 			values.push_back(LOSS);
 		}
+		std::unique_ptr<WinLossUnknownDatabase> wldb;
 		wldb = std::make_unique<WinLossUnknownDatabase>(std::move(starts), std::move(lengths), std::move(values));
-		visitor_ptr = std::make_unique<CompositeValueVisitor>(wldb.get());
+		
 	}
 
-	IntervalVisitor& visitor = *visitor_ptr;
-	Stopwatch stopwatch = Stopwatch::process();
-	enumerate_anchored_states_threaded(*slice, traditional, visitor);
-	auto times = stopwatch.elapsed();
-	fmt::print("Processed generation {} slice {}.\n", *generation, *slice);
-	fmt::print("Visited {} states, found {} wins ({:.3f}) and {} losses ({:.3f}), total {} ({:.3f}) resolved.\n",
-			visitor.visited,
-			visitor.wins, (double)visitor.wins / (double)visitor.visited,
-			visitor.losses, (double)visitor.losses / (double)visitor.visited,
-			visitor.wins + visitor.losses, (double)(visitor.wins + visitor.losses) / (double)visitor.visited);
-	unsigned long total_win_intervals = 0, total_loss_intervals = 0;
-	for (auto& v : visitor.win_intervals)
-		total_win_intervals += v.size();
-	for (auto& v : visitor.loss_intervals)
-		total_loss_intervals += v.size();
-	fmt::print("{} win intervals ({:.5f}) and {} loss intervals ({:.5f}).\n",
-			total_win_intervals, (double)visitor.wins / (double)total_win_intervals,
-			total_loss_intervals, (double)visitor.losses / (double)total_loss_intervals);
-	fmt::print("{} seconds ({}), {} cpu-seconds ({:.2f}), {:.2f} GiB, {} hard faults.\n",
-			times.seconds(), times.hms(), times.cpuSeconds(), times.utilization(), times.highwaterGibibytes(), times.hardFaults());
-
-	//They should already be sorted, but be doubly-sure.
-	std::sort(visitor.win_intervals.begin(), visitor.win_intervals.end());
-	std::sort(visitor.loss_intervals.begin(), visitor.loss_intervals.end());
-	//IntervalVisitor assumes a given visitor object will either be the parent
-	//being merged into or an actual visitor, not both.  The parent shouldn't
-	//have any singleton ranks of its own because it never visits.  Ideally we
-	//would change the design of ForkableStateVisitor to not inherit from
-	//StateVisitor, but in lieu of that, at least fail noisily.
-	if (visitor.win_ranks.size() || visitor.loss_ranks.size())
-		throw std::logic_error("unmerged singleton ranks?");
-
-	write_intervals(std::move(visitor.win_intervals), win_start_file, win_length_file);
-	write_intervals(std::move(visitor.loss_intervals), loss_start_file, loss_length_file);
-	return 0;
+	
 }
