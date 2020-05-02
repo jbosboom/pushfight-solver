@@ -8,7 +8,6 @@
 #include "util.hpp"
 #include "hopscotch/hopscotch_set.h"
 #include "hopscotch/hopscotch_map.h"
-#include "lmdb-safe/lmdb-safe.hh"
 #include <filesystem>
 #include <fcntl.h>
 #include <sys/mman.h> //for mmap
@@ -225,17 +224,15 @@ struct OutcountingPair {
 } __attribute__((packed));
 
 struct OutcountingVisitor : public ForkableStateVisitor {
+	vector<vector<pair<unsigned long, unsigned long>>> win_intervals, loss_intervals;
+	unsigned long wins = 0, losses = 0, visited = 0;
 	tsl::hopscotch_map<unsigned long, vector<unsigned long>> succ_to_pred;
-	vector<OutcountingPair> outcounts;
-	unsigned long visited = 0;
-	std::shared_ptr<MDBEnv> env;
-	MDBDbi succ_to_pred_db, outcounts_db;
+	tsl::hopscotch_map<unsigned long, std::uint16_t> outcounts;
 	const WinLossUnknownDatabase* wldb;
-	vector<unsigned long> successors;
+	tsl::hopscotch_set<unsigned long> successors;
 	unsigned long bytes_pending = 0;
 	unsigned long current_rank = 0;
-	OutcountingVisitor(std::shared_ptr<MDBEnv> db, MDBDbi stp, MDBDbi oc, const WinLossUnknownDatabase* wldb)
-			: env(db), succ_to_pred_db(stp), outcounts_db(oc), wldb(wldb) {}
+	OutcountingVisitor(const WinLossUnknownDatabase* wldb) : wldb(wldb) {}
 
 	bool begin(const State& state) override {
 		current_rank = rank(state, traditional);
@@ -253,75 +250,73 @@ struct OutcountingVisitor : public ForkableStateVisitor {
 			//whether this position is a win or a loss
 			return true;
 		auto r = rank(state, traditional);
-		successors.push_back(r);
+		successors.insert(r);
 		return true;
 	}
 
 	void end(const State& state) override {
 		++visited;
-		std::sort(successors.begin(), successors.end());
-		successors.erase(std::unique(successors.begin(), successors.end()), successors.end());
 		if (successors.size() > std::numeric_limits<std::uint16_t>::max())
 			throw std::logic_error(fmt::format("too many successors for {}: {}", current_rank, successors.size()));
-		outcounts.push_back({current_rank, (std::uint16_t)successors.size()});
+		outcounts[current_rank] = (std::uint16_t)successors.size();
 		auto succ_to_pred_before_size = succ_to_pred.size();
 		for (auto succ : successors)
 			succ_to_pred[succ].push_back(current_rank);
 		auto succ_to_pred_delta = succ_to_pred.size() - succ_to_pred_before_size;
-		bytes_pending += sizeof(outcounts.front()) + sizeof(unsigned long)*(succ_to_pred_delta + successors.size());
-		if (bytes_pending > 32*1024*1024)
+		bytes_pending += 10 + sizeof(unsigned long)*(succ_to_pred_delta + successors.size());
+		if (bytes_pending > 128*1024*1024)
 			flush();
 	}
 
 	void flush() {
-		vector<unsigned long> merge_dest;
-
-		MDBRWTransaction txn = env->getRWTransaction();
-
-		std::string_view outcounts_data(reinterpret_cast<char*>(outcounts.data()), outcounts.size()*sizeof(outcounts.front()));
-		txn->put(outcounts_db, outcounts.front().r, outcounts_data);
+		vector<unsigned long> win_ranks;
 
 		for (const std::pair<unsigned long, vector<unsigned long>>& p : succ_to_pred) {
-			//Check if there is existing data.  If so, merge into a new vector.
-			MDBOutVal existing;
-			if (!txn->get(succ_to_pred_db, p.first, existing)) {
-				const unsigned long* existing_first = reinterpret_cast<unsigned long*>(existing.d_mdbval.mv_data);
-				const unsigned long* existing_last = existing_first + existing.d_mdbval.mv_size / sizeof(unsigned long);
-				merge_dest.clear();
-				//TODO: because we know the size ahead of time, we could
-				//profitably use MDB_RESERVE to merge directly into the DB
-				merge_dest.resize(std::distance(existing_first, existing_last) + p.second.size());
-				auto merge_end = std::merge(existing_first, existing_last, p.second.begin(), p.second.end(), merge_dest.begin());
-				if (merge_end != merge_dest.end())
-					throw std::logic_error("miscalculated merge size?");
-				std::string_view new_data(reinterpret_cast<char*>(merge_dest.data()), merge_dest.size() * sizeof(unsigned long));
-				txn->put(succ_to_pred_db, p.first, new_data);
-			} else {
-				std::string_view new_data(reinterpret_cast<const char*>(p.second.data()), p.second.size() * sizeof(unsigned long));
-				txn->put(succ_to_pred_db, p.first, new_data);
-			}
+			auto value = wldb->query(p.first);
+			if (value == LOSS)
+				win_ranks.insert(win_ranks.end(), p.second.begin(), p.second.end());
+			else if (value == WIN)
+				for (unsigned long pred : p.second)
+					--outcounts[pred];
 		}
 
-		txn->commit();
+		vector<unsigned long> loss_ranks;
+		for (const std::pair<unsigned long, std::uint16_t>& p : outcounts)
+			if (!p.second)
+				loss_ranks.push_back(p.first);
+
+		std::sort(win_ranks.begin(), win_ranks.end());
+		win_ranks.erase(std::unique(win_ranks.begin(), win_ranks.end()), win_ranks.end());
+		wins += win_ranks.size();
+		win_intervals.push_back(maximal_intervals(win_ranks));
+		std::sort(loss_ranks.begin(), loss_ranks.end());
+		loss_ranks.erase(std::unique(loss_ranks.begin(), loss_ranks.end()), loss_ranks.end());
+		losses += loss_ranks.size();
+		loss_intervals.push_back(maximal_intervals(loss_ranks));
+
 		succ_to_pred.clear();
 		outcounts.clear();
 		bytes_pending = 0;
 	}
 
 	std::unique_ptr<ForkableStateVisitor> clone() const override {
-		return std::make_unique<OutcountingVisitor>(env, succ_to_pred_db, outcounts_db, wldb);
+		return std::make_unique<OutcountingVisitor>(wldb);
 	}
 
 	void merge(std::unique_ptr<ForkableStateVisitor> p) override {
 		OutcountingVisitor* other = dynamic_cast<OutcountingVisitor*>(p.get());
 		if (other->bytes_pending)
 			other->flush();
-		//no attempt to merge succ_to_pred or outcounts -- those are flushed to LMDB
+
+		wins += other->wins;
+		losses += other->losses;
 		visited += other->visited;
+		win_intervals.insert(win_intervals.end(), std::move_iterator(other->win_intervals.begin()), std::move_iterator(other->win_intervals.end()));
+		loss_intervals.insert(loss_intervals.end(), std::move_iterator(other->loss_intervals.begin()), std::move_iterator(other->loss_intervals.end()));
 	}
 };
 
-int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': '-llmdb'}
+int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''}
 	std::optional<unsigned int> generation, slice;
 	std::optional<std::filesystem::path> data_dir;
 	for (int i = 1; i < argc; ++i)
@@ -414,16 +409,34 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': '-
 		std::unique_ptr<WinLossUnknownDatabase> wldb;
 		wldb = std::make_unique<WinLossUnknownDatabase>(std::move(starts), std::move(lengths), std::move(values));
 
-		std::filesystem::path db_path = *data_dir / fmt::format("temp-{}-{:02}.mdb", *generation, *slice);
-		std::filesystem::create_directory(db_path);
-		auto env = getMDBEnv(db_path.c_str(), 0, 0600);
-		auto pred_to_succ_db = env->openDB("pred_to_succ", MDB_CREATE | MDB_INTEGERKEY);
-		auto outcounts_db = env->openDB("outcounts", MDB_CREATE | MDB_INTEGERKEY);
-
-		OutcountingVisitor visitor(env, pred_to_succ_db, outcounts_db, wldb.get());
+		OutcountingVisitor visitor(wldb.get());
 		Stopwatch stopwatch = Stopwatch::process();
 		enumerate_anchored_states_threaded(*slice, traditional, visitor);
 		auto times = stopwatch.elapsed();
+
+		fmt::print("Processed generation {} slice {}.\n", *generation, *slice);
+		fmt::print("Visited {} states, found {} wins ({:.3f}) and {} losses ({:.3f}), total {} ({:.3f}) resolved.\n",
+				visitor.visited,
+				visitor.wins, (double)visitor.wins / (double)visitor.visited,
+				visitor.losses, (double)visitor.losses / (double)visitor.visited,
+				visitor.wins + visitor.losses, (double)(visitor.wins + visitor.losses) / (double)visitor.visited);
+		unsigned long total_win_intervals = 0, total_loss_intervals = 0;
+		for (auto& v : visitor.win_intervals)
+			total_win_intervals += v.size();
+		for (auto& v : visitor.loss_intervals)
+			total_loss_intervals += v.size();
+		fmt::print("{} win intervals ({:.5f}) and {} loss intervals ({:.5f}).\n",
+				total_win_intervals, (double)visitor.wins / (double)total_win_intervals,
+				total_loss_intervals, (double)visitor.losses / (double)total_loss_intervals);
+		fmt::print("{} seconds ({}), {} cpu-seconds ({:.2f}), {:.2f} GiB, {} hard faults.\n",
+				times.seconds(), times.hms(), times.cpuSeconds(), times.utilization(), times.highwaterGibibytes(), times.hardFaults());
+
+		//They should already be sorted, but be doubly-sure.
+		std::sort(visitor.win_intervals.begin(), visitor.win_intervals.end());
+		std::sort(visitor.loss_intervals.begin(), visitor.loss_intervals.end());
+
+		write_intervals(std::move(visitor.win_intervals), win_start_file, win_length_file);
+		write_intervals(std::move(visitor.loss_intervals), loss_start_file, loss_length_file);
 	}
 
 	
