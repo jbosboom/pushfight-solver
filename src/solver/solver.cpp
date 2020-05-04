@@ -218,6 +218,18 @@ void write_intervals(vector<vector<pair<unsigned long, unsigned long>>>&& interv
 	}
 }
 
+struct splitmix64 {
+	//from near bottom of https://nullprogram.com/blog/2018/07/31/
+	std::size_t operator()(unsigned long x) const {
+		x ^= x >> 30;
+		x *= 0xbf58476d1ce4e5b9UL;
+		x ^= x >> 27;
+		x *= 0x94d049bb133111ebUL;
+		x ^= x >> 31;
+		return x;
+	}
+};
+
 struct OutcountingPair {
 	unsigned long r;
 	std::uint16_t count;
@@ -226,10 +238,10 @@ struct OutcountingPair {
 struct OutcountingVisitor : public ForkableStateVisitor {
 	vector<vector<pair<unsigned long, unsigned long>>> win_intervals, loss_intervals;
 	unsigned long wins = 0, losses = 0, visited = 0;
-	tsl::hopscotch_map<unsigned long, vector<unsigned long>> succ_to_pred;
-	tsl::hopscotch_map<unsigned long, std::uint16_t> outcounts;
+	tsl::hopscotch_map<unsigned long, vector<unsigned long>, splitmix64> succ_to_pred;
+	tsl::hopscotch_map<unsigned long, std::uint16_t, splitmix64> outcounts;
 	const WinLossUnknownDatabase* wldb;
-	tsl::hopscotch_set<unsigned long> successors;
+	tsl::hopscotch_set<unsigned long, splitmix64> successors;
 	unsigned long bytes_pending = 0;
 	unsigned long current_rank = 0;
 	OutcountingVisitor(const WinLossUnknownDatabase* wldb) : wldb(wldb) {}
