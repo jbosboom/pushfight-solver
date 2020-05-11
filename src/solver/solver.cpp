@@ -235,6 +235,23 @@ struct OutcountingPair {
 	std::uint16_t count;
 } __attribute__((packed));
 
+//This could be more general.
+auto gallop_to_next_first(vector<pair<unsigned long, unsigned long>>::iterator first,
+		vector<pair<unsigned long, unsigned long>>::iterator last) {
+	auto old = first->first;
+	auto size = static_cast<std::size_t>(std::distance(first, last));
+	if (size < 32 || first[32].first != old) {
+		while (first != last && first->first == old)
+			++first;
+		return first;
+	}
+	std::size_t gallop = 64;
+	while (gallop < size && first[gallop].first == old)
+		gallop *= 2;
+	return std::upper_bound(first+(gallop/2), first+std::min(size, gallop), old,
+			[](auto& a, auto& b){return a < b.first;});
+}
+
 struct OutcountingVisitor : public ForkableStateVisitor {
 	vector<vector<pair<unsigned long, unsigned long>>> win_intervals, loss_intervals;
 	unsigned long wins = 0, losses = 0, visited = 0;
@@ -294,8 +311,7 @@ struct OutcountingVisitor : public ForkableStateVisitor {
 					--outcounts[it->second];
 				} while ((++it) != succ_to_pred.end() && it->first == succ);
 			else
-				//TODO: maybe want to gallop to find the next successors?
-				while ((++it) != succ_to_pred.end() && it->first == succ) {}
+				it = gallop_to_next_first(it, succ_to_pred.end());
 		}
 
 		vector<unsigned long> loss_ranks;
