@@ -238,13 +238,14 @@ struct OutcountingPair {
 struct OutcountingVisitor : public ForkableStateVisitor {
 	vector<vector<pair<unsigned long, unsigned long>>> win_intervals, loss_intervals;
 	unsigned long wins = 0, losses = 0, visited = 0;
-	tsl::hopscotch_map<unsigned long, vector<unsigned long>, splitmix64> succ_to_pred;
+	vector<pair<unsigned long, unsigned long>> succ_to_pred;
 	tsl::hopscotch_map<unsigned long, std::uint16_t, splitmix64> outcounts;
 	const WinLossUnknownDatabase* wldb;
 	tsl::hopscotch_set<unsigned long, splitmix64> successors;
-	unsigned long bytes_pending = 0;
 	unsigned long current_rank = 0;
-	OutcountingVisitor(const WinLossUnknownDatabase* wldb) : wldb(wldb) {}
+	OutcountingVisitor(const WinLossUnknownDatabase* wldb) : wldb(wldb) {
+		succ_to_pred.reserve(64*1024*1024);
+	}
 
 	bool begin(const State& state) override {
 		current_rank = rank(state, traditional);
@@ -271,25 +272,30 @@ struct OutcountingVisitor : public ForkableStateVisitor {
 		if (successors.size() > std::numeric_limits<std::uint16_t>::max())
 			throw std::logic_error(fmt::format("too many successors for {}: {}", current_rank, successors.size()));
 		outcounts[current_rank] = (std::uint16_t)successors.size();
-		auto succ_to_pred_before_size = succ_to_pred.size();
 		for (auto succ : successors)
-			succ_to_pred[succ].push_back(current_rank);
-		auto succ_to_pred_delta = succ_to_pred.size() - succ_to_pred_before_size;
-		bytes_pending += 10 + sizeof(unsigned long)*(succ_to_pred_delta + successors.size());
-		if (bytes_pending > 128*1024*1024)
+			succ_to_pred.push_back({succ, current_rank});
+		if (succ_to_pred.size() > succ_to_pred.capacity() - 25000)
 			flush();
 	}
 
 	void flush() {
 		vector<unsigned long> win_ranks;
 
-		for (const std::pair<unsigned long, vector<unsigned long>>& p : succ_to_pred) {
-			auto value = wldb->query(p.first);
+		std::sort(succ_to_pred.begin(), succ_to_pred.end(), [](auto& a, auto& b){return a.first < b.first;});
+		for (auto it = succ_to_pred.begin(); it != succ_to_pred.end();) {
+			auto succ = it->first;
+			auto value = wldb->query(succ);
 			if (value == LOSS)
-				win_ranks.insert(win_ranks.end(), p.second.begin(), p.second.end());
+				do {
+					win_ranks.push_back(it->second);
+				} while ((++it) != succ_to_pred.end() && it->first == succ);
 			else if (value == WIN)
-				for (unsigned long pred : p.second)
-					--outcounts[pred];
+				do {
+					--outcounts[it->second];
+				} while ((++it) != succ_to_pred.end() && it->first == succ);
+			else
+				//TODO: maybe want to gallop to find the next successors?
+				while ((++it) != succ_to_pred.end() && it->first == succ) {}
 		}
 
 		vector<unsigned long> loss_ranks;
@@ -308,7 +314,6 @@ struct OutcountingVisitor : public ForkableStateVisitor {
 
 		succ_to_pred.clear();
 		outcounts.clear();
-		bytes_pending = 0;
 	}
 
 	std::unique_ptr<ForkableStateVisitor> clone() const override {
@@ -317,7 +322,7 @@ struct OutcountingVisitor : public ForkableStateVisitor {
 
 	void merge(std::unique_ptr<ForkableStateVisitor> p) override {
 		OutcountingVisitor* other = dynamic_cast<OutcountingVisitor*>(p.get());
-		if (other->bytes_pending)
+		if (!other->succ_to_pred.empty())
 			other->flush();
 
 		wins += other->wins;
