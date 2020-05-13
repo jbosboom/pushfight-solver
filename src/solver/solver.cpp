@@ -407,7 +407,7 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		fmt::print("{} seconds ({}), {} cpu-seconds ({:.2f}), {:.2f} GiB, {} hard faults.\n",
 				times.seconds(), times.hms(), times.cpuSeconds(), times.utilization(), times.highwaterGibibytes(), times.hardFaults());
 
-		//They should already be sorted, but be doubly-sure.
+		//We no longer merge in order, so we need to sort.
 		std::sort(visitor.win_intervals.begin(), visitor.win_intervals.end());
 		std::sort(visitor.loss_intervals.begin(), visitor.loss_intervals.end());
 		//IntervalVisitor assumes a given visitor object will either be the parent
@@ -464,7 +464,7 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		fmt::print("{} seconds ({}), {} cpu-seconds ({:.2f}), {:.2f} GiB, {} hard faults.\n",
 				times.seconds(), times.hms(), times.cpuSeconds(), times.utilization(), times.highwaterGibibytes(), times.hardFaults());
 
-		//They should already be sorted, but be doubly-sure.
+		//We no longer merge in order, so we need to sort.
 		std::sort(visitor.win_intervals.begin(), visitor.win_intervals.end());
 		std::sort(visitor.loss_intervals.begin(), visitor.loss_intervals.end());
 

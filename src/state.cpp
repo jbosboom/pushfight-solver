@@ -412,23 +412,24 @@ void enumerate_anchored_states_threaded(unsigned int slice, const Board& board, 
 	};
 
 	auto task_count = swork.board_choose_masks[swork.board.pushers() - 1].size();
-	vector<unique_ptr<ForkableStateVisitor>> results;
-	results.resize(task_count);
+	std::mutex merge_mutex;
 	std::atomic<std::size_t> index_dispenser(0);
 	vector<std::future<void>> futures;
 	std::size_t num_threads = std::thread::hardware_concurrency();
 	for (std::size_t i = 0; i < num_threads && i < task_count; ++i)
 		futures.push_back(std::async(std::launch::async, [&]() {
-			for (std::size_t index = index_dispenser++; index < task_count; index = index_dispenser++)
-				results[index] = work_function(index);
+			for (std::size_t index = index_dispenser++; index < task_count; index = index_dispenser++) {
+				auto result = work_function(index);
+				if (result) {
+					std::lock_guard lock(merge_mutex);
+					sv.merge(std::move(result));
+				}
+			}
 		}));
 	for (std::size_t i = 0; i < futures.size(); ++i) {
 		futures[i].wait();
 		futures[i].get(); //rethrow any exception from the thread
 	}
-	for (std::size_t i = 0; i < results.size(); ++i)
-		if (results[i])
-			sv.merge(std::move(results[i]));
 }
 
 } //namespace pushfight
