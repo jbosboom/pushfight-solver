@@ -118,6 +118,10 @@ struct WinLossUnknownDatabase {
 			void* lv = mmap(nullptr, lsz, PROT_READ, MAP_SHARED_VALIDATE, fd, 0);
 			close(fd);
 
+			//Disable readahead.
+			madvise(sv, ssz, MADV_RANDOM);
+			madvise(lv, lsz, MADV_RANDOM);
+
 			Data d;
 			d.start.first = reinterpret_cast<unsigned long*>(sv);
 			d.start.second = d.start.first + ssz / sizeof(unsigned long);
