@@ -8,6 +8,7 @@
 #include "util.hpp"
 #include "hopscotch/hopscotch_set.h"
 #include "hopscotch/hopscotch_map.h"
+#include "ska_sort.hpp"
 #include <filesystem>
 #include <fcntl.h>
 #include <sys/mman.h> //for mmap
@@ -302,7 +303,7 @@ struct OutcountingVisitor : public ForkableStateVisitor {
 	void flush() {
 		vector<unsigned long> win_ranks;
 
-		std::sort(succ_to_pred.begin(), succ_to_pred.end(), [](auto& a, auto& b){return a.first < b.first;});
+		ska_sort(succ_to_pred.begin(), succ_to_pred.end(), [](auto& a){return a.first;});
 		for (auto it = succ_to_pred.begin(); it != succ_to_pred.end();) {
 			auto succ = it->first;
 			auto value = wldb->query(succ);
