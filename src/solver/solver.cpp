@@ -264,6 +264,8 @@ struct OutcountingVisitor : public ForkableStateVisitor {
 	tsl::hopscotch_map<unsigned long, std::uint16_t, splitmix64> outcounts;
 	const WinLossUnknownDatabase* wldb;
 	tsl::hopscotch_set<unsigned long, splitmix64> successors;
+	std::array<State, 16> pending_successors;
+	unsigned int pending_successors_idx = 0;
 	unsigned long current_rank = 0;
 	OutcountingVisitor(const WinLossUnknownDatabase* wldb) : wldb(wldb) {
 		succ_to_pred.reserve(64*1024*1024);
@@ -284,12 +286,23 @@ struct OutcountingVisitor : public ForkableStateVisitor {
 			//can't rank this because we removed a piece, but it doesn't affect
 			//whether this position is a win or a loss
 			return true;
-		auto r = rank(state, traditional);
-		successors.insert(r);
+		pending_successors[pending_successors_idx++] = state;
+		if (pending_successors_idx == pending_successors.size())
+			flush_successors();
 		return true;
 	}
 
+	void flush_successors() {
+		std::array<unsigned long, 16> ranks;
+		for (unsigned int i = 0; i < pending_successors_idx; ++i)
+			ranks[i] = rank(pending_successors[i], traditional);
+		for (unsigned int i = 0; i < pending_successors_idx; ++i)
+			successors.insert(ranks[i]);
+		pending_successors_idx = 0;
+	}
+
 	void end(const State& state) override {
+		flush_successors();
 		++visited;
 		if (successors.size() > std::numeric_limits<std::uint16_t>::max())
 			throw std::logic_error(fmt::format("too many successors for {}: {}", current_rank, successors.size()));
