@@ -41,3 +41,49 @@
     -
       - add rectangle (0, 4) 4 4
 
+- name: mini
+  topology:
+    - add rectangle (0, 0) 3 6
+    - remove square (0, 0)
+    - remove square (0, 5)
+    - remove square (2, 0)
+    - remove square (2, 5)
+    - rail up line (0, 1) (0, 4)
+    - rail down line (2, 1) (2, 4)
+  placement:
+    -
+      - add rectangle (0, 0) 3 3
+      - remove square (0, 0)
+      - remove square (2, 0)
+    -
+      - add rectangle (0, 3) 3 3
+      - remove square (0, 5)
+      - remove square (2, 5)
+  pawns: 2
+  pushers: 2
+  moves: [0, 1, 2]
+
+# traditional with the middle two columns removed
+- name: twocolumn
+  inherits: traditional
+  topology:
+    - add rectangle (0, 0) 4 6
+    - remove square (0, 0)
+    - remove square (0, 1)
+    - remove square (0, 5)
+    - remove square (3, 0)
+    - remove square (3, 4)
+    - remove square (3, 5)
+    - rail up line (0, 2) (0, 4)
+    - rail down line (3, 1) (3, 3)
+  placement:
+    -
+      - add rectangle (0, 0) 4 3
+      - remove square (0, 0)
+      - remove square (0, 1)
+      - remove square (3, 0)
+    -
+      - add rectangle (0, 3) 4 3
+      - remove square (0, 5)
+      - remove square (3, 4)
+      - remove square (3, 5)
