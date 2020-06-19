@@ -60,6 +60,33 @@ public:
 			m |= 1 << allowed_moves_[i];
 		return m;
 	}
+
+	const unsigned int* placement0_begin() const {
+		return placement_first_;
+	}
+	const unsigned int* placement0_end() const {
+		return placement_first_ + placement_first_len_;
+	}
+	const unsigned int* placement1_begin() const {
+		return placement_second_;
+	}
+	const unsigned int* placement1_end() const {
+		return placement_second_ + placement_first_len_;
+	}
+
+	std::pair<unsigned int, unsigned int> coord_for_square(unsigned int square) const {
+		return square_to_coord_[square];
+	}
+	unsigned int square_for_coord(std::pair<unsigned int, unsigned int> coord) const {
+		for (unsigned int square = 0; square < squares_; ++square) {
+			if (square_to_coord_[square] == coord)
+				return square;
+		}
+		throw std::logic_error(fmt::format("bad square_for_coord: {} {}", coord.first, coord.second));
+	}
+	unsigned int square_for_coord(unsigned int row, unsigned int col) const {
+		return square_for_coord({row, col});
+	}
 private:
 	std::string_view name_;
 	unsigned int squares_, anchorables_, pushers_, pawns_;

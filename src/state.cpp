@@ -161,7 +161,46 @@ struct SharedWorkspace {
 			adjacent_to_void[d] = v;
 			adjacent_to_rail[d] = r;
 		}
+
+		placement1_mask = 0;
+		for (const unsigned int* i = board.placement1_begin(); i != board.placement1_end(); ++i)
+			placement1_mask |= 1 << *i;
+		//To rotate 180 degrees, find the x and y distances to the center of
+		//mass and add their negations to the center of mass.
+		double avg_row = 0.0, avg_col = 0.0;
+		for (unsigned int s = 0; s < board.squares(); ++s) {
+			auto coord = board.coord_for_square(s);
+			avg_row += coord.first;
+			avg_col += coord.second;
+		}
+		avg_row /= board.squares();
+		avg_col /= board.squares();
+		for (unsigned int s = 0; s < board.squares(); ++s) {
+			auto coord = board.coord_for_square(s);
+			double dr = coord.first - avg_row, dc = coord.second - avg_col;
+			double nr = avg_row + (-dr), nc = avg_col + (-dc);
+			canonicalize_180[s] = board.square_for_coord(std::round(nr), std::round(nc));
+		}
 	}
+
+	State canonicalize(State state) const {
+		if (state.anchored_pieces & placement1_mask) {
+			State canonical = {};
+			for (int s : set_bits_range(state.anchored_pieces))
+				canonical.anchored_pieces |= 1 << canonicalize_180[s];
+			for (int s : set_bits_range(state.enemy_pushers))
+				canonical.enemy_pushers |= 1 << canonicalize_180[s];
+			for (int s : set_bits_range(state.enemy_pawns))
+				canonical.enemy_pawns |= 1 << canonicalize_180[s];
+			for (int s : set_bits_range(state.allied_pushers))
+				canonical.allied_pushers |= 1 << canonicalize_180[s];
+			for (int s : set_bits_range(state.allied_pawns))
+				canonical.allied_pawns |= 1 << canonicalize_180[s];
+			state = canonical;
+		}
+		return state;
+	}
+
 	const Board& board;
 	std::array<uint32_t, 26> neighbor_masks;
 	//for each direction, a mask of the squares immediately adjacent to VOID or RAIL
@@ -170,6 +209,8 @@ struct SharedWorkspace {
 	std::array<std::vector<uint32_t>, 4> board_choose_masks;
 	unsigned int max_moves;
 	unsigned int allowable_moves_mask;
+	std::array<uint32_t, 26> canonicalize_180;
+	unsigned int placement1_mask;
 };
 
 char remove_piece(State& state, unsigned int index) {
@@ -252,6 +293,8 @@ bool do_all_pushes(const State source, const SharedWorkspace& swork, StateVisito
 			succ.anchored_pieces = 1u << chain[1]; //anchor where the pusher moved to
 			std::swap(succ.allied_pushers, succ.enemy_pushers);
 			std::swap(succ.allied_pawns, succ.enemy_pawns);
+
+			succ = swork.canonicalize(succ);
 
 			if (!sv.accept(succ, removed_piece))
 				return false;
