@@ -355,13 +355,15 @@ struct OutcountingVisitor : public ForkableStateVisitor {
 };
 
 int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''}
-	std::optional<unsigned int> generation, slice;
+	std::optional<unsigned int> generation, slice, subslice;
 	std::optional<std::filesystem::path> data_dir;
 	for (int i = 1; i < argc; ++i)
 		if (argv[i] == "--generation"sv)
 			generation = from_string<unsigned int>(argv[++i]);
 		else if (argv[i] == "--slice"sv)
 			slice = from_string<unsigned int>(argv[++i]);
+		else if (argv[i] == "--subslice"sv)
+			subslice = from_string<unsigned int>(argv[++i]);
 		else if (argv[i] == "--data-dir"sv || argv[i] == "--data"sv)
 			data_dir = argv[++i];
 		else {
@@ -376,17 +378,18 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		fmt::print(stderr, "data dir not a directory (or does not exist)\n");
 		return 1;
 	}
-	std::filesystem::path win_start_file = *data_dir / fmt::format("win-{}-{:02}.bin", *generation, *slice),
+	
+	if (*generation == 0) {
+		std::filesystem::path win_start_file = *data_dir / fmt::format("win-{}-{:02}.bin", *generation, *slice),
 			win_length_file = *data_dir / fmt::format("win-{}-{:02}.len", *generation, *slice),
 			loss_start_file = *data_dir / fmt::format("loss-{}-{:02}.bin", *generation, *slice),
 			loss_length_file = *data_dir / fmt::format("loss-{}-{:02}.len", *generation, *slice);
-	if (std::filesystem::exists(win_start_file) || std::filesystem::exists(loss_start_file) ||
-			std::filesystem::exists(win_length_file) || std::filesystem::exists(loss_length_file)) {
-		fmt::print(stderr, "win or loss files exist; not overwriting\n");
-		return 1;
-	}
+		if (std::filesystem::exists(win_start_file) || std::filesystem::exists(loss_start_file) ||
+				std::filesystem::exists(win_length_file) || std::filesystem::exists(loss_length_file)) {
+			fmt::print(stderr, "win or loss files exist; not overwriting\n");
+			return 1;
+		}
 
-	if (*generation == 0) {
 		std::unique_ptr<IntervalVisitor> visitor_ptr;
 		visitor_ptr = std::make_unique<InherentValueVisitor>();
 		IntervalVisitor& visitor = *visitor_ptr;
@@ -427,6 +430,22 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		write_intervals(std::move(visitor.loss_intervals), loss_start_file, loss_length_file);
 		return 0;
 	} else {
+		//Check if the final outputs exist.
+		std::filesystem::path win_start_file = *data_dir / fmt::format("win-{}-{:02}-{:03}.bin", *generation, *slice),
+			win_length_file = *data_dir / fmt::format("win-{}-{:02}-{:03}.len", *generation, *slice),
+			loss_start_file = *data_dir / fmt::format("loss-{}-{:02}-{:03}.bin", *generation, *slice),
+			loss_length_file = *data_dir / fmt::format("loss-{}-{:02}-{:03}.len", *generation, *slice);
+		if (std::filesystem::exists(win_start_file) || std::filesystem::exists(loss_start_file) ||
+				std::filesystem::exists(win_length_file) || std::filesystem::exists(loss_length_file)) {
+			fmt::print(stderr, "win or loss files exist; not overwriting\n");
+			return 1;
+		}
+		//We go ahead and overwrite these temp files.
+		win_start_file = *data_dir / "tmp" / fmt::format("win-{}-{:02}-{:03}.bin", *generation, *slice);
+		win_length_file = *data_dir / "tmp" / fmt::format("win-{}-{:02}-{:03}.len", *generation, *slice);
+		loss_start_file = *data_dir / "tmp" / fmt::format("loss-{}-{:02}-{:03}.bin", *generation, *slice);
+		loss_length_file = *data_dir / "tmp" / fmt::format("loss-{}-{:02}-{:03}.len", *generation, *slice);
+
 		vector<std::filesystem::path> starts, lengths;
 		vector<GameValue> values;
 		for (unsigned int g = 0; g < *generation; ++g) {
@@ -452,7 +471,7 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		enumerate_anchored_states_threaded(*slice, traditional, visitor);
 		auto times = stopwatch.elapsed();
 
-		fmt::print("Processed generation {} slice {}.\n", *generation, *slice);
+		fmt::print("Processed generation {} slice {} subslice {}.\n", *generation, *slice, *subslice);
 		fmt::print("Visited {} states, found {} wins ({:.3f}) and {} losses ({:.3f}), total {} ({:.3f}) resolved.\n",
 				visitor.visited,
 				visitor.wins, (double)visitor.wins / (double)visitor.visited,

@@ -475,4 +475,44 @@ void enumerate_anchored_states_threaded(unsigned int slice, const Board& board, 
 	}
 }
 
+void enumerate_anchored_states_subslice(unsigned int slice, unsigned int subslice, const Board& board, ForkableStateVisitor& sv) {
+	assert(slice < board.anchorable_squares());
+	SharedWorkspace swork(board);
+	State base_state = {};
+	base_state.enemy_pushers = 1 << slice;
+	base_state.anchored_pieces = base_state.enemy_pushers;
+
+	auto work_function = [&](std::size_t index) -> unique_ptr<ForkableStateVisitor> {
+		unsigned int epu_mask = swork.board_choose_masks[swork.board.pushers() - 1][index];
+		if (epu_mask & base_state.blockers()) return nullptr;
+		unique_ptr<ForkableStateVisitor> result = sv.clone();
+		State state = base_state;
+		state.enemy_pushers |= epu_mask;
+		assert(std::popcount(state.enemy_pushers) == swork.board.pushers());
+
+		for (unsigned int epa_mask : swork.board_choose_masks[swork.board.pawns()]) {
+			if (epa_mask & state.blockers()) continue;
+			state.enemy_pawns = epa_mask;
+
+			for (unsigned int apu_mask : swork.board_choose_masks[swork.board.pushers()]) {
+				if (apu_mask & state.blockers()) continue;
+				state.allied_pushers = apu_mask;
+
+				for (unsigned int apa_mask : swork.board_choose_masks[swork.board.pawns()]) {
+					if (apa_mask & state.blockers()) continue;
+					state.allied_pawns = apa_mask;
+					next_states(state, 0, swork, *result);
+					state.allied_pawns = 0;
+				}
+
+				state.allied_pushers = 0;
+			}
+
+			state.enemy_pawns = 0;
+		}
+		return result;
+	};
+	work_function(subslice);
+}
+
 } //namespace pushfight
