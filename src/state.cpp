@@ -512,7 +512,9 @@ void enumerate_anchored_states_subslice(unsigned int slice, unsigned int subslic
 		}
 		return result;
 	};
-	work_function(subslice);
+	auto result = work_function(subslice);
+	if (result)
+		sv.merge(std::move(result));
 }
 
 } //namespace pushfight
