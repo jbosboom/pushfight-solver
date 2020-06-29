@@ -11,6 +11,7 @@
 #include "ska_sort.hpp"
 #include <filesystem>
 #include <fcntl.h>
+#include <unistd.h>
 #include <sys/mman.h> //for mmap
 
 using namespace pushfight;
@@ -211,6 +212,29 @@ void write_intervals(vector<vector<pair<unsigned long, unsigned long>>>&& interv
 		}
 		vector<pair<unsigned long, unsigned long>> free_memory(std::move(v));
 	}
+
+	if (std::fflush(sf)) {
+		auto saved_errno = errno;
+		throw std::runtime_error(fmt::format("error writing {}: failed to flush start file; error {} ({})",
+				start_filename.c_str(), strerror(saved_errno), saved_errno));
+	}
+	if (std::fflush(lf)) {
+		auto saved_errno = errno;
+		throw std::runtime_error(fmt::format("error writing {}: failed to flush length file; error {} ({})",
+				start_filename.c_str(), strerror(saved_errno), saved_errno));
+	}
+
+	if (fsync(fileno(sf))) {
+		auto saved_errno = errno;
+		throw std::runtime_error(fmt::format("error writing {}: failed to sync start file; error {} ({})",
+				start_filename.c_str(), strerror(saved_errno), saved_errno));
+	}
+	if (fsync(fileno(lf))) {
+		auto saved_errno = errno;
+		throw std::runtime_error(fmt::format("error writing {}: failed to sync length file; error {} ({})",
+				start_filename.c_str(), strerror(saved_errno), saved_errno));
+	}
+
 	if (std::fclose(sf)) {
 		auto saved_errno = errno;
 		throw std::runtime_error(fmt::format("error writing {}: failed to close start file; error {} ({})",
@@ -431,20 +455,20 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		return 0;
 	} else {
 		//Check if the final outputs exist.
-		std::filesystem::path win_start_file = *data_dir / fmt::format("win-{}-{:02}-{:03}.bin", *generation, *slice),
-			win_length_file = *data_dir / fmt::format("win-{}-{:02}-{:03}.len", *generation, *slice),
-			loss_start_file = *data_dir / fmt::format("loss-{}-{:02}-{:03}.bin", *generation, *slice),
-			loss_length_file = *data_dir / fmt::format("loss-{}-{:02}-{:03}.len", *generation, *slice);
+		std::filesystem::path win_start_file = *data_dir / fmt::format("win-{}-{:02}-{:03}.bin", *generation, *slice, *subslice),
+			win_length_file = *data_dir / fmt::format("win-{}-{:02}-{:03}.len", *generation, *slice, *subslice),
+			loss_start_file = *data_dir / fmt::format("loss-{}-{:02}-{:03}.bin", *generation, *slice, *subslice),
+			loss_length_file = *data_dir / fmt::format("loss-{}-{:02}-{:03}.len", *generation, *slice, *subslice);
 		if (std::filesystem::exists(win_start_file) || std::filesystem::exists(loss_start_file) ||
 				std::filesystem::exists(win_length_file) || std::filesystem::exists(loss_length_file)) {
 			fmt::print(stderr, "win or loss files exist; not overwriting\n");
 			return 1;
 		}
 		//We go ahead and overwrite these temp files.
-		win_start_file = *data_dir / "tmp" / fmt::format("win-{}-{:02}-{:03}.bin", *generation, *slice);
-		win_length_file = *data_dir / "tmp" / fmt::format("win-{}-{:02}-{:03}.len", *generation, *slice);
-		loss_start_file = *data_dir / "tmp" / fmt::format("loss-{}-{:02}-{:03}.bin", *generation, *slice);
-		loss_length_file = *data_dir / "tmp" / fmt::format("loss-{}-{:02}-{:03}.len", *generation, *slice);
+		std::filesystem::path win_start_temp_file = *data_dir / "tmp" / fmt::format("win-{}-{:02}-{:03}.bin", *generation, *slice, *subslice),
+			win_length_temp_file = *data_dir / "tmp" / fmt::format("win-{}-{:02}-{:03}.len", *generation, *slice, *subslice),
+			loss_start_temp_file = *data_dir / "tmp" / fmt::format("loss-{}-{:02}-{:03}.bin", *generation, *slice, *subslice),
+			loss_length_temp_file = *data_dir / "tmp" / fmt::format("loss-{}-{:02}-{:03}.len", *generation, *slice, *subslice);
 
 		vector<std::filesystem::path> starts, lengths;
 		vector<GameValue> values;
@@ -492,8 +516,15 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		std::sort(visitor.win_intervals.begin(), visitor.win_intervals.end());
 		std::sort(visitor.loss_intervals.begin(), visitor.loss_intervals.end());
 
-		write_intervals(std::move(visitor.win_intervals), win_start_file, win_length_file);
-		write_intervals(std::move(visitor.loss_intervals), loss_start_file, loss_length_file);
+		write_intervals(std::move(visitor.win_intervals), win_start_temp_file, win_length_temp_file);
+		write_intervals(std::move(visitor.loss_intervals), loss_start_temp_file, loss_length_temp_file);
+		//We're screwed if we crash after partially but not completely renaming these...
+		//I guess we can manually check when concatenating them that we have the
+		//same number of each type of file.
+		std::filesystem::rename(win_start_temp_file, win_start_file);
+		std::filesystem::rename(win_length_temp_file, win_length_file);
+		std::filesystem::rename(loss_start_temp_file, loss_start_file);
+		std::filesystem::rename(loss_length_temp_file, loss_length_file);
 	}
 
 	
