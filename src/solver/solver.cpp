@@ -492,7 +492,7 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 
 		OutcountingVisitor visitor(wldb.get());
 		Stopwatch stopwatch = Stopwatch::process();
-		enumerate_anchored_states_threaded(*slice, traditional, visitor);
+		enumerate_anchored_states_subslice(*slice, *subslice, traditional, visitor);
 		auto times = stopwatch.elapsed();
 
 		fmt::print("Processed generation {} slice {} subslice {}.\n", *generation, *slice, *subslice);
