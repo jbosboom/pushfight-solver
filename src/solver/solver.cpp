@@ -378,9 +378,122 @@ struct OutcountingVisitor : public ForkableStateVisitor {
 	}
 };
 
+struct OpeningProcedureVisitor : public ForkableStateVisitor {
+	const WinLossUnknownDatabase* wldb;
+	tsl::hopscotch_set<unsigned long> already_processed;
+	bool is_win = false; //set true if we ever push off an enemy piece
+	bool is_loss = true; //set false if we ever make a push that doesn't push off an allied piece
+	vector<State> winning_openings, losing_openings, drawn_openings;
+	OpeningProcedureVisitor(const WinLossUnknownDatabase* wldb) : wldb(wldb) {}
+
+	bool begin(const State& state) override {
+		already_processed.clear();
+		is_win = false;
+		is_loss = true;
+		return true;
+	}
+
+	bool accept(const State& state, char removed_piece) override {
+		if (removed_piece == 'E' || removed_piece == 'e') {
+			is_loss = false;
+			is_win = true;
+			return false;
+		}
+		if (removed_piece == 'A' || removed_piece == 'a')
+			//can't rank this because we removed a piece, but it doesn't affect
+			//whether this position is a win or a loss
+			return true;
+		auto r = rank(state, traditional);
+		if (!already_processed.insert(r).second)
+			return true;
+		auto value = wldb->query(r);
+		if (value != WIN)
+			is_loss = false;
+		if (value == LOSS) {
+			is_win = true;
+			return false;
+		}
+		return true;
+	}
+
+	void end(const State& state) override {
+		if (is_win)
+			winning_openings.push_back(state);
+		else if (is_loss)
+			losing_openings.push_back(state);
+		else
+			drawn_openings.push_back(state);
+	}
+
+	std::unique_ptr<ForkableStateVisitor> clone() const override {
+		return std::make_unique<OpeningProcedureVisitor>(wldb);
+	}
+
+	void merge(std::unique_ptr<ForkableStateVisitor> p) override {
+		OpeningProcedureVisitor* other = dynamic_cast<OpeningProcedureVisitor*>(p.get());
+
+		winning_openings.insert(winning_openings.end(), other->winning_openings.begin(), other->winning_openings.end());
+		losing_openings.insert(losing_openings.end(), other->losing_openings.begin(), other->losing_openings.end());
+		drawn_openings.insert(drawn_openings.end(), other->drawn_openings.begin(), other->drawn_openings.end());
+	}
+};
+
+void write_openings(std::filesystem::path data_dir, const OpeningProcedureVisitor& v) {
+	std::filesystem::path opening_dir = data_dir / "openings";
+	std::filesystem::create_directory(opening_dir);
+
+	//As written, we'll only write a file if we have openings to write into it;
+	//no empty files will be created.
+	auto it = v.winning_openings.begin();
+	while (it != v.winning_openings.end()) {
+		State allied_halfstate = *it;
+		std::filesystem::path opening_file = opening_dir /
+				fmt::format("{}-{}-win.txt", allied_halfstate.allied_pushers, allied_halfstate.allied_pawns);
+		FILE* f = std::fopen(opening_file.c_str(), "w+");
+		while (it != v.winning_openings.end() &&
+				it->allied_pushers == allied_halfstate.allied_pushers &&
+				it->allied_pawns == allied_halfstate.allied_pawns) {
+			fmt::print(f, "{} {}\n", it->enemy_pushers, it->enemy_pawns);
+			++it;
+		}
+		std::fclose(f);
+	}
+
+	it = v.losing_openings.begin();
+	while (it != v.losing_openings.end()) {
+		State allied_halfstate = *it;
+		std::filesystem::path opening_file = opening_dir /
+				fmt::format("{}-{}-loss.txt", allied_halfstate.allied_pushers, allied_halfstate.allied_pawns);
+		FILE* f = std::fopen(opening_file.c_str(), "w+");
+		while (it != v.losing_openings.end() &&
+				it->allied_pushers == allied_halfstate.allied_pushers &&
+				it->allied_pawns == allied_halfstate.allied_pawns) {
+			fmt::print(f, "{} {}\n", it->enemy_pushers, it->enemy_pawns);
+			++it;
+		}
+		std::fclose(f);
+	}
+
+	it = v.drawn_openings.begin();
+	while (it != v.drawn_openings.end()) {
+		State allied_halfstate = *it;
+		std::filesystem::path opening_file = opening_dir /
+				fmt::format("{}-{}-draw.txt", allied_halfstate.allied_pushers, allied_halfstate.allied_pawns);
+		FILE* f = std::fopen(opening_file.c_str(), "w+");
+		while (it != v.drawn_openings.end() &&
+				it->allied_pushers == allied_halfstate.allied_pushers &&
+				it->allied_pawns == allied_halfstate.allied_pawns) {
+			fmt::print(f, "{} {}\n", it->enemy_pushers, it->enemy_pawns);
+			++it;
+		}
+		std::fclose(f);
+	}
+}
+
 int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''}
 	std::optional<unsigned int> generation, slice, subslice;
 	std::optional<std::filesystem::path> data_dir;
+	bool do_opening_procedure = false;
 	for (int i = 1; i < argc; ++i)
 		if (argv[i] == "--generation"sv)
 			generation = from_string<unsigned int>(argv[++i]);
@@ -390,6 +503,8 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 			subslice = from_string<unsigned int>(argv[++i]);
 		else if (argv[i] == "--data-dir"sv || argv[i] == "--data"sv)
 			data_dir = argv[++i];
+		else if (argv[i] == "--opening"sv || argv[i] == "--openings"sv)
+			do_opening_procedure = true;
 		else {
 			fmt::print(stderr, "unknown option: {}\n", argv[i]);
 			return 1;
@@ -403,7 +518,47 @@ int main(int argc, char* argv[]) { //genbuild {'entrypoint': True, 'ldflags': ''
 		return 1;
 	}
 	
-	if (*generation == 0) {
+	if (do_opening_procedure) {
+		vector<std::filesystem::path> starts, lengths;
+		vector<GameValue> values;
+		for (unsigned int g = 0; ; ++g) {
+			std::filesystem::path ws = *data_dir / fmt::format("win-{}.bin", g),
+					wl = *data_dir / fmt::format("win-{}.len", g),
+					ls = *data_dir / fmt::format("loss-{}.bin", g),
+					ll = *data_dir / fmt::format("loss-{}.len", g);
+			int present_count = 0;
+			for (std::filesystem::path p : {ws, wl, ls, ll})
+				if (!std::filesystem::is_regular_file(p))
+					++present_count;
+			if (present_count == 0)
+				break;
+			else if (present_count != 4)
+				for (std::filesystem::path p : {ws, wl, ls, ll})
+					if (!std::filesystem::is_regular_file(p))
+						throw std::runtime_error(fmt::format("expected {} to exist", p.c_str()));
+			starts.push_back(ws);
+			lengths.push_back(wl);
+			values.push_back(WIN);
+			starts.push_back(ls);
+			lengths.push_back(ll);
+			values.push_back(LOSS);
+		}
+		std::unique_ptr<WinLossUnknownDatabase> wldb;
+		wldb = std::make_unique<WinLossUnknownDatabase>(std::move(starts), std::move(lengths), std::move(values));
+		OpeningProcedureVisitor visitor(wldb.get());
+
+		Stopwatch stopwatch = Stopwatch::process();
+		opening_procedure(traditional, visitor);
+		auto times = stopwatch.elapsed();
+
+		fmt::print("Processed {} openings ({} won, {} lost, {} drawn).\n",
+				visitor.winning_openings.size() + visitor.losing_openings.size() + visitor.drawn_openings.size(),
+				visitor.winning_openings.size(), visitor.losing_openings.size(), visitor.drawn_openings.size());
+		fmt::print("{} seconds ({}), {} cpu-seconds ({:.2f}), {:.2f} GiB, {} hard faults.\n",
+				times.seconds(), times.hms(), times.cpuSeconds(), times.utilization(), times.highwaterGibibytes(), times.hardFaults());
+
+		write_openings(*data_dir, visitor);
+	} else if (*generation == 0) {
 		std::filesystem::path win_start_file = *data_dir / fmt::format("win-{}-{:02}.bin", *generation, *slice),
 			win_length_file = *data_dir / fmt::format("win-{}-{:02}.len", *generation, *slice),
 			loss_start_file = *data_dir / fmt::format("loss-{}-{:02}.bin", *generation, *slice),

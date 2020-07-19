@@ -32,6 +32,7 @@ struct ForkableStateVisitor : public StateVisitor {
 void enumerate_anchored_states(const Board& board, StateVisitor& sv);
 void enumerate_anchored_states_threaded(unsigned int slice, const Board& board, ForkableStateVisitor& sv);
 void enumerate_anchored_states_subslice(unsigned int slice, unsigned int subslice, const Board& board, ForkableStateVisitor& sv);
+void opening_procedure(const Board& board, ForkableStateVisitor& sv);
 
 }//namespace pushfight
 

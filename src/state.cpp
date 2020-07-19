@@ -162,6 +162,9 @@ struct SharedWorkspace {
 			adjacent_to_rail[d] = r;
 		}
 
+		placement0_mask = 0;
+		for (const unsigned int* i = board.placement0_begin(); i != board.placement0_end(); ++i)
+			placement0_mask |= 1 << *i;
 		placement1_mask = 0;
 		for (const unsigned int* i = board.placement1_begin(); i != board.placement1_end(); ++i)
 			placement1_mask |= 1 << *i;
@@ -210,7 +213,7 @@ struct SharedWorkspace {
 	unsigned int max_moves;
 	unsigned int allowable_moves_mask;
 	std::array<uint32_t, 26> canonicalize_180;
-	unsigned int placement1_mask;
+	unsigned int placement0_mask, placement1_mask;
 };
 
 char remove_piece(State& state, unsigned int index) {
@@ -515,6 +518,58 @@ void enumerate_anchored_states_subslice(unsigned int slice, unsigned int subslic
 	auto result = work_function(subslice);
 	if (result)
 		sv.merge(std::move(result));
+}
+
+void opening_procedure(const Board& board, ForkableStateVisitor& sv) {
+	SharedWorkspace swork(board);
+	vector<State> allied_halfstates, enemy_halfstates;
+	{
+		State state = {};
+		for (unsigned int pu_mask : swork.board_choose_masks[swork.board.pushers()]) {
+			state.allied_pushers = state.enemy_pushers = pu_mask;
+			for (unsigned int pa_mask : swork.board_choose_masks[swork.board.pawns()]) {
+				if (pa_mask & pu_mask) continue;
+				state.allied_pawns = state.enemy_pawns = pa_mask;
+
+				if ((state.blockers() & swork.placement0_mask) == state.blockers())
+					allied_halfstates.push_back(state);
+				if ((state.blockers() & swork.placement1_mask) == state.blockers())
+					enemy_halfstates.push_back(state);
+			}
+		}
+	}
+
+	auto work_function = [&](std::size_t index) -> unique_ptr<ForkableStateVisitor> {
+		unique_ptr<ForkableStateVisitor> result = sv.clone();
+		State allied_halfstate = allied_halfstates[index];
+		for (State enemy_halfstate : enemy_halfstates) {
+			State state = allied_halfstate;
+			state.enemy_pushers = enemy_halfstate.enemy_pushers;
+			state.enemy_pawns = enemy_halfstate.enemy_pawns;
+			next_states(state, 0, swork, *result);
+		}
+		return result;
+	};
+
+	auto task_count = allied_halfstates.size();
+	std::mutex merge_mutex;
+	std::atomic<std::size_t> index_dispenser(0);
+	vector<std::future<void>> futures;
+	std::size_t num_threads = std::thread::hardware_concurrency();
+	for (std::size_t i = 0; i < num_threads && i < task_count; ++i)
+		futures.push_back(std::async(std::launch::async, [&]() {
+			for (std::size_t index = index_dispenser++; index < task_count; index = index_dispenser++) {
+				auto result = work_function(index);
+				if (result) {
+					std::lock_guard lock(merge_mutex);
+					sv.merge(std::move(result));
+				}
+			}
+		}));
+	for (std::size_t i = 0; i < futures.size(); ++i) {
+		futures[i].wait();
+		futures[i].get(); //rethrow any exception from the thread
+	}
 }
 
 } //namespace pushfight
